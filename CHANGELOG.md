@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### ⚡ Performance & Low Latency
+- **UDP Annex-B Video Transport (`orbiscreen-transport`, Android Client)**:
+  - Second path beside HTTP MPEG-TS: H.264 access units over UDP (`signaling_port + 1`, advertised as `udp_port` on `/api/info`).
+  - Hello carries the session token; ping/pong measures RTT; IDR requests reuse the existing encoder force-key-unit path.
+  - Android prefers UDP and decodes with MediaCodec onto a Surface (no ExoPlayer / MPEG-TS). HTTP `/stream` remains for the web client and as fallback (including USB/AOA `127.0.0.1`, where raw UDP cannot be reversed).
+  - Reassemble access units in linear time, enlarge socket buffers, and hold P-frames after a lost fragment until the next IDR so a dropped UDP packet cannot leave the decoder permanently garbled.
+  - Per-client DPLPMTUD: host probes upward from a safe baseline (1200) with padded UDP datagrams; the Android client ACKs the received size. Video fragments follow the confirmed datagram. Probe and video datagrams set `IP_PMTUDISC_PROBE`. Acks that do not match the in-flight probe id are ignored after the search completes. `ORBISCREEN_UDP_MAX_DATAGRAM` caps the search; `ORBISCREEN_UDP_DROP_ABOVE` pretends larger packets were lost (test hook). `ORBISCREEN_UDP_LOSS_PCT` randomly drops outgoing datagrams (test hook).
+  - UDP hello waits out the handshake window so a PMTU probe arriving before Hello-Ack does not abort the session. A host-liveness watchdog ends the UDP session if no packet arrives. The UDP surface letterboxes to the same content rect as touch mapping. The stream menu shows send-to-assemble delay as `delay Nms` (2–4 ms on a 2560×1600 VA-API Wi-Fi path; HTTP ExoPlayer still targets a 24 ms live offset).
+
+### 🖥 Virtual Display
+- **KWin Virtual Output & Direct Touch (`orbiscreen-daemon`, `orbiscreen-capture`, `orbiscreen-input`)**:
+  - Create `Virtual-ORBISCREEN`, then `Virtual-ORBISCREEN-{pid}` when the unsuffixed name is already taken. Clear a disabled KWin output config before creating the stream. Bind mouse, touchscreen, and tablet to the connector name the stream actually accepted.
+  - Bind only when this session owns an enabled Orbiscreen virtual output (`outputName` + `outputUuid`, `mapToWorkspace = false`).
+  - Direct Touch writes evdev type-B slots on the virtual touchscreen and lifts the pen before the first finger.
+  - After the last HTTP/UDP client disconnects, lift `BTN_TOOL_PEN` and close the KWin virtual output so it leaves the layout. The next client recreates the stream (retrying unpark while still present), rebinds input to the new connector, and requests an IDR. A parked capture waits quietly instead of warning every frame.
+
 ## [v0.24.0] - 2026-09-07
 
 Harmonize UI/UX design and Catppuccin Mocha palette between Android and Web clients, eliminate redundant Blank Display action, strengthen Web CSP headers, sanitize input coordinates against non-finite values, enforce strict codebase comment standards, and purge dead build artifacts.

@@ -132,7 +132,10 @@ private fun App(prefs: PrefsStore) {
             PrefsStore.ThemePref.Dark -> ThemeMode.Dark
         },
     ) {
-        OrbiNav(prefs)
+        val activity = context as? android.app.Activity
+        val startHost = activity?.intent?.getStringExtra("host")
+        val startPort = activity?.intent?.getIntExtra("port", 8788) ?: 8788
+        OrbiNav(prefs, startHost = startHost, startPort = startPort)
         startupUpdate?.let { release ->
             UpdateDialog(
                 release = release,

@@ -1403,6 +1403,7 @@ dependencies = [
  "gstreamer",
  "gstreamer-app",
  "hostname",
+ "libc",
  "mdns-sd",
  "orbiscreen-encode",
  "orbiscreen-input",

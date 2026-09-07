@@ -34,6 +34,7 @@ graph TD
         D -->|"ترميز GStreamer عتادي/برمجي"| E["بث تدفق H.264 AU"]
         E --> F["orbiscreen-transport (النقل والشبكة)"]
         F -->|"بث MPEG-TS HTTP عبر مسار /stream"| G["الشبكة / وصلة USB"]
+        F -->|"UDP Annex-B (udp_port)"| G
         F -->|"استكشاف mDNS _orbiscreen._tcp."| G
         F -->|"معلومات العرض GET /api/info"| G
         F -->|"أوامر التحكم POST /api/control"| G
@@ -66,7 +67,7 @@ graph TD
 | `orbiscreen-capture` | محركات الالتقاط عبر &rlm;Wayland Portal (ashpd)&rlm; و &rlm;X11 (x11rb) | `ashpd`، `x11rb` |
 | `orbiscreen-encode` | خطوط أنابيب ترميز &rlm;H.264&rlm; عتادية وبرمجية | `gstreamer`، `gstreamer-app` |
 | `orbiscreen-input` | حقن اللمس العكسي والقلم ولوحة المفاتيح | `evdevil`، `nix` |
-| `orbiscreen-transport` | خادم &rlm;Axum HTTP&rlm; على مسار `/stream`، واكتشاف &rlm;mDNS&rlm;، ونفق &rlm;ADB reverse&rlm;، ونقاط `/api/*` و `/health` | `axum`، `gstreamer`، `tokio` |
+| `orbiscreen-transport` | خادم &rlm;Axum HTTP&rlm; على مسار `/stream`، وUDP بنمط Annex-B (`udp_port`)، واكتشاف &rlm;mDNS&rlm;، ونفق &rlm;ADB reverse&rlm;، ونقاط `/api/*` و `/health` | `axum`، `gstreamer`، `tokio` |
 | `orbiscreen-daemon` | ثنائي الـ &rlm;daemon&rlm; الرئيسي، تكامل &rlm;systemd&rlm; وخدمة &rlm;D-Bus | `zbus`، `clap`، `tokio` |
 
 </div>

@@ -72,6 +72,8 @@ class PlayerHolder(
 
     private val _player = MutableStateFlow<ExoPlayer?>(null)
     val player: StateFlow<ExoPlayer?> get() = _player
+    private val _udp = MutableStateFlow<UdpPlayer?>(null)
+    val udpPlayer: StateFlow<UdpPlayer?> get() = _udp
 
     private var reconnectJob: Job? = null
     private var reconnectDelayMs = 1_000L
@@ -118,6 +120,26 @@ class PlayerHolder(
         val uri = StreamUrl.build(host, port, token)
         android.util.Log.i("OrbiPlayer", "connecting to stream: $uri")
         _event.value = StreamEvent.Connecting(uri)
+
+        val info = try {
+            com.orbiscreen.android.net.HostApi().info(host, port)
+        } catch (_: Exception) {
+            null
+        }
+        if (info != null && info.udpPort in 1..65535 && host != "127.0.0.1" && host != "localhost") {
+            val udp = UdpPlayer()
+            val started = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                udp.start(host, info.udpPort, token, info.width, info.height)
+            }
+            if (started) {
+                _udp.value = udp
+                _player.value = null
+                scope.launch {
+                    udp.event.collect { ev -> _event.value = ev }
+                }
+                return null
+            }
+        }
 
         val player = try {
             val httpFactory = OkHttpDataSource.Factory(okHttp)
@@ -318,6 +340,8 @@ class PlayerHolder(
     }
 
     private fun releaseInternal() {
+        _udp.value?.stop()
+        _udp.value = null
         _player.value?.release()
         _player.value = null
         _event.value = StreamEvent.Idle

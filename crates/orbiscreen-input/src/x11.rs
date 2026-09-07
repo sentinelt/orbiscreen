@@ -268,6 +268,9 @@ impl UinputInjector {
         if becoming_active {
             self.touch_slot_active[slot] = true;
             self.touch_active_count = self.touch_active_count.saturating_add(1);
+            if self.touch_active_count == 1 {
+                self.release_tools()?;
+            }
         } else if becoming_idle {
             self.touch_slot_active[slot] = false;
             self.touch_active_count = self.touch_active_count.saturating_sub(1);
@@ -302,9 +305,27 @@ impl UinputInjector {
         Ok(())
     }
 
+    pub fn release_tools(&mut self) -> Result<(), InputError> {
+        self.button_1_pressed = false;
+        let xi = self.cursor_x.round() as i32;
+        let yi = self.cursor_y.round() as i32;
+        let events = vec![
+            AbsEvent::new(Abs::X, xi).into(),
+            AbsEvent::new(Abs::Y, yi).into(),
+            AbsEvent::new(Abs::PRESSURE, 0).into(),
+            KEv::new(Key::BTN_TOUCH, KeyState::RELEASED).into(),
+            KEv::new(Key::BTN_STYLUS, KeyState::RELEASED).into(),
+            KEv::new(Key::BTN_STYLUS2, KeyState::RELEASED).into(),
+            KEv::new(Key::BTN_TOOL_PEN, KeyState::RELEASED).into(),
+            SynEvent::new(Syn::REPORT).into(),
+        ];
+        self.tablet.write_events(&events)?;
+        Ok(())
+    }
+
     pub fn inject_stylus(&mut self, event: StylusEvent) -> Result<(), InputError> {
         let (x, y, pressure, tilt) = match event {
-            StylusEvent::Proximity {} => return Ok(()),
+            StylusEvent::Proximity {} => return self.release_tools(),
             StylusEvent::Pressure { x, y, pressure } => (x, y, pressure, None),
             StylusEvent::Tilt {
                 x,

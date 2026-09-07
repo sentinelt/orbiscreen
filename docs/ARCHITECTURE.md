@@ -34,6 +34,7 @@ graph TD
         D -->|"GStreamer HW/SW Encode"| E["H.264 AU stream"]
         E --> F["orbiscreen-transport"]
         F -->|"MPEG-TS HTTP /stream"| G["Network / USB"]
+        F -->|"UDP Annex-B (udp_port)"| G
         F -->|"mDNS _orbiscreen._tcp."| G
         F -->|"GET /api/info"| G
         F -->|"POST /api/control"| G
@@ -45,9 +46,11 @@ graph TD
         W -->|"POST /input"| F
         G -->|"NSD discovery + token"| H["Android DiscoveryService"]
         H -->|"onConnect"| J["StreamViewModel"]
-        J -->|"PlayerHolder.build"| K["OkHttpDataSource"]
+        J -->|"UDP when advertised"| U["UdpPlayer + MediaCodec"]
+        J -->|"HTTP fallback"| K["OkHttpDataSource"]
         K -->|"MPEG-TS + Bearer token"| L["ExoPlayer + MediaCodec"]
-        L -->|"Touch"| N["InputDispatcher"]
+        U -->|"Touch"| N["InputDispatcher"]
+        L -->|"Touch"| N
         N -->|"POST /input + Bearer token"| F
         J -->|"POST /api/control"| F
     end
@@ -64,7 +67,7 @@ graph TD
 | `orbiscreen-capture` | Wayland Portal (ashpd) & X11 (x11rb) capture engines: **fallback source only** | `ashpd`, `x11rb` |
 | `orbiscreen-encode` | Hardware & software H.264 encoding pipelines | `gstreamer`, `gstreamer-app` |
 | `orbiscreen-input` | Reverse touch, stylus, and keyboard injection (uinput) | `evdev`, `ashpd` |
-| `orbiscreen-transport` | Axum HTTP `/stream` + token auth, mDNS, ADB reverse, `/api/info`, `/api/control`, `/health` | `axum`, `gstreamer`, `tokio`, `rand`, `base64` |
+| `orbiscreen-transport` | Axum HTTP `/stream` + token auth, UDP Annex-B (`udp_port`), mDNS, ADB reverse, `/api/info`, `/api/control`, `/health` | `axum`, `gstreamer`, `tokio`, `rand`, `base64` |
 | `orbiscreen-daemon` | Main daemon binary, systemd integration & live D-Bus service | `zbus`, `clap`, `tokio` |
 
 ---

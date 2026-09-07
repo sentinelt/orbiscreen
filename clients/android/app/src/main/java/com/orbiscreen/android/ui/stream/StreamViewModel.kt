@@ -58,6 +58,7 @@ class StreamViewModel(
     val state: StateFlow<StreamState> = _state.asStateFlow()
 
     val player get() = playerHolder.player
+    val udpPlayer get() = playerHolder.udpPlayer
 
     private suspend fun freshToken(forceRefresh: Boolean = false): String {
         return withContext(Dispatchers.IO) {
