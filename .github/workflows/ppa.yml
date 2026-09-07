@@ -20,6 +20,9 @@ jobs:
   build-and-upload-ppa:
     name: Build & Upload Source Package to PPA
     runs-on: ubuntu-24.04
+    environment:
+      name: Launchpad-PPA
+      url: https://launchpad.net/~shadow-x78/+archive/ubuntu/ppa
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

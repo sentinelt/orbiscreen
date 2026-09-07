@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.23.8] - 2026-09-07
+
+Multi-target GitHub Deployments tracking, automated direct APT repository sync on GitHub Pages, standard issue form templates, and banner-aligned social preview branding.
+
+### 🚀 CI/CD & Deployments
+- **GitHub Environments & Multi-Target Deployments**:
+  - Registered official GitHub Deployments environments across all workflows: `Launchpad-PPA` (`.github/workflows/ppa.yml`), `Fedora-RPM` (`.github/workflows/fedora.yml`), and `GitHub-Releases` (`.github/workflows/release.yml`).
+  - Added automated `deploy-apt` job in `release.yml` that pulls the newly built `orbiscreen_amd64.deb`, places it into `gh-pages/pool`, regenerates Debian package index (`Packages`, `Packages.gz`), computes SHA256/MD5 checksums, updates `Release`, and automatically deploys to GitHub Pages (`https://shadow-x78.github.io/orbiscreen/`).
+
+### 🎨 Branding & Social Preview
+- **Faithful Banner Artwork Alignment**:
+  - Completely redesigned `assets/logo/orbiscreen-social-preview.svg` and `assets/logo/orbiscreen-social-preview.png` to be 100% faithful to the official vector banner (`assets/logo/orbiscreen-banner.svg`).
+  - Preserved canonical Orbiscreen geometry: single outer dashed orbit ring (`r=118`), brand blue primary ring (`r=92`), clean orbiting satellite screen (`r=34`), and official 3-pill feature badges (`Low Latency`, `Wayland & X11`, `Stylus & Touch`).
+  - Rendered high-resolution 1280x640 Open Graph social preview without letterboxing or artificial artifacts.
+
+### 👥 Community & Contributor Health
+- **Standardized Markdown Issue Templates**:
+  - Converted issue forms into standard GitHub Markdown templates (`.github/ISSUE_TEMPLATE/bug_report.md` and `.github/ISSUE_TEMPLATE/feature_request.md`) recognized natively by GitHub's community health profile and issue chooser UI.
+  - Added `.github/ISSUE_TEMPLATE/config.yml` with direct navigation to Discussions, Architecture docs, and Security policies.
+  - Configured community funding in `.github/FUNDING.yml` and enabled repository sponsorships via GitHub GraphQL API.
+
+### 🧹 Packaging & Maintenance
+- **Cargo Workspace**: Bumped workspace package version to 0.23.8.
+- **Android Client**: Incremented `versionCode` to 68; updated `versionName` to "0.23.8".
+- **COPR / RPM Spec** (`data/orbiscreen-copr.spec`): Updated to version 0.23.8 with changelog entry.
+- **debian/changelog**: Added 0.23.8-1 release for Ubuntu noble.
+- **PKGBUILD**: Bumped `pkgver` to 0.23.8.
+
 ## [v0.23.7] - 2026-09-07
 
 Enable infinite GOP length, periodic intra-refresh for x264enc, and on-demand IDR keyframe recovery for seamless low-latency streaming without periodic network spikes.
