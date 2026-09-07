@@ -5,7 +5,6 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.23.7
 Version:        0.23.8
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
@@ -131,7 +130,7 @@ fi
 * Sun Sep 06 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.23.0-1
 - Release 0.23.0: Ultra-low latency USB pipeline tuning, resilient interface claim, and graceful USB detach navigation.
 
-* Sat Sep 06 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.22.9-1
+* Sun Sep 06 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.22.9-1
 - Release 0.22.9: Fix AOA USB packet truncation causing session token loss and auth=missing rejections; proper TCP shutdown on FRAME_FLAG_CLOSE; session token caching in Android client.
 
 * Sat Sep 05 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.22.8-1
