@@ -584,16 +584,15 @@ pub async fn run_udp_hub(
                 _ = recv_shutdown.changed() => break,
                 res = recv_sock.recv_from(&mut buf) => {
                     let Ok((n, addr)) = res else { continue };
-                    handle_incoming(
-                        &buf[..n],
-                        addr,
-                        &recv_token,
-                        &recv_sock,
-                        &recv_clients,
-                        recv_idr.as_ref(),
-                        &recv_stats,
-                        recv_limits,
-                    ).await;
+                    let ctx = IncomingCtx {
+                        token: &recv_token,
+                        sock: &recv_sock,
+                        clients: &recv_clients,
+                        idr_tx: recv_idr.as_ref(),
+                        stats: &recv_stats,
+                        limits: recv_limits,
+                    };
+                    handle_incoming(&buf[..n], addr, &ctx).await;
                 }
             }
         }
@@ -669,57 +668,59 @@ pub async fn run_udp_hub(
     }
 }
 
-async fn handle_incoming(
-    buf: &[u8],
-    addr: SocketAddr,
-    token: &str,
-    sock: &UdpSocket,
-    clients: &tokio::sync::Mutex<HashMap<SocketAddr, UdpClient>>,
-    idr_tx: Option<&tokio::sync::mpsc::Sender<()>>,
-    stats: &super::Stats,
+#[allow(missing_debug_implementations)]
+struct IncomingCtx<'a> {
+    token: &'a str,
+    sock: &'a UdpSocket,
+    clients: &'a tokio::sync::Mutex<HashMap<SocketAddr, UdpClient>>,
+    idr_tx: Option<&'a tokio::sync::mpsc::Sender<()>>,
+    stats: &'a super::Stats,
     limits: UdpLimits,
-) {
+}
+
+async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
     match parse_packet(buf) {
         Some(Packet::Hello(got)) => {
-            if !super::token_eq(&got, token) {
+            if !super::token_eq(&got, ctx.token) {
                 warn!(%addr, "UDP hello rejected");
-                stats.note_auth_failure();
+                ctx.stats.note_auth_failure();
                 return;
             }
-            let mut map = clients.lock().await;
+            let mut map = ctx.clients.lock().await;
             let joining = !map.contains_key(&addr);
-            let client = map.entry(addr).or_insert_with(|| new_client(limits));
+            let client = map.entry(addr).or_insert_with(|| new_client(ctx.limits));
             client.last_seen = Instant::now();
             if joining {
-                stats.client_started();
+                ctx.stats.client_started();
                 info!(
                     %addr,
                     start = client.pmtu.confirmed(),
                     payload = client.pmtu.video_payload(),
                     "UDP client joined"
                 );
-                request_idr_sender(idr_tx);
+                request_idr_sender(ctx.idr_tx);
             }
-            let _ = send_datagram(sock, &encode_hello_ack(), addr, limits).await;
+            let _ = send_datagram(ctx.sock, &encode_hello_ack(), addr, ctx.limits).await;
             if joining {
                 if client.pmtu.is_complete() {
-                    announce_pmtu(sock, addr, client, limits).await;
+                    announce_pmtu(ctx.sock, addr, client, ctx.limits).await;
                 } else {
-                    send_probe(sock, addr, client, limits).await;
+                    send_probe(ctx.sock, addr, client, ctx.limits).await;
                 }
             }
         }
         Some(Packet::Ping(t0)) => {
-            touch_client(clients, addr).await;
-            let _ = send_datagram(sock, &encode_pong(t0, now_unix_ns()), addr, limits).await;
+            touch_client(ctx.clients, addr).await;
+            let _ =
+                send_datagram(ctx.sock, &encode_pong(t0, now_unix_ns()), addr, ctx.limits).await;
         }
         Some(Packet::Idr) => {
-            if touch_client(clients, addr).await {
-                request_idr_sender(idr_tx);
+            if touch_client(ctx.clients, addr).await {
+                request_idr_sender(ctx.idr_tx);
             }
         }
         Some(Packet::ProbeAck { id, recv }) => {
-            let mut map = clients.lock().await;
+            let mut map = ctx.clients.lock().await;
             let Some(client) = map.get_mut(&addr) else {
                 return;
             };
@@ -734,8 +735,8 @@ async fn handle_incoming(
                         confirmed = client.pmtu.confirmed(),
                         "UDP PMTU ack"
                     );
-                    announce_pmtu(sock, addr, client, limits).await;
-                    request_idr_sender(idr_tx);
+                    announce_pmtu(ctx.sock, addr, client, ctx.limits).await;
+                    request_idr_sender(ctx.idr_tx);
                 }
                 AckEffect::Continue => {
                     debug!(
@@ -744,7 +745,7 @@ async fn handle_incoming(
                         confirmed = client.pmtu.confirmed(),
                         "UDP PMTU ack"
                     );
-                    send_probe(sock, addr, client, limits).await;
+                    send_probe(ctx.sock, addr, client, ctx.limits).await;
                 }
             }
         }
