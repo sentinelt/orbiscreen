@@ -1,4 +1,13 @@
 orbiscreen (0.23.10-1~ubuntunoble1) noble; urgency=medium
+orbiscreen (0.24.1-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.24.1 for Ubuntu noble.
+  * UDP Annex-B video transport with per-client DPLPMTUD.
+  * KWin dynamic virtual display with Direct Touch binding.
+  * Send-to-assemble delay metrics in Android stream menu.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Mon, 07 Sep 2026 22:50:00 +0300
+
 orbiscreen (0.24.0-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.23.10 for Ubuntu noble.

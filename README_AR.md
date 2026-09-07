@@ -11,6 +11,7 @@
 **شاشة افتراضية ثانية حقيقية ومستقلة وبزمن استجابة فائق السرعة لنظام Linux (Wayland و X11) تُبث إلى أجهزة وهواتف Android.**
 
 [![الإصدار](https://img.shields.io/badge/version-0.24.0-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.24.1-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=for-the-badge)](LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=for-the-badge&logo=rust)
 ![المنصّة](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=for-the-badge&logo=linux)
@@ -351,6 +352,7 @@ orbiscreen/
 | الوثيقة | الوصف |
 | :--- | :--- |
 | [ARCHITECTURE_AR.md](docs/ARCHITECTURE_AR.md) | طوبولوجيا النظام وخط أنابيب الإطارات وبنية D-Bus |
+| [UDP_TRANSPORT_AR.md](docs/UDP_TRANSPORT_AR.md) | مسار فيديو UDP Annex-B وأنواع الحزم واستكشاف DPLPMTUD وخطافات الاختبار |
 | [DE_SUPPORT_AR.md](docs/DE_SUPPORT_AR.md) | مصفوفة دعم بيئات سطح المكتب وخطط الالتقاط واستكشاف الأخطاء |
 | [PACKAGING_AR.md](docs/PACKAGING_AR.md) | مواصفات التغليف متعدد التوزيعات (.deb و .rpm و AppImage) |
 | [DBUS_SPEC_AR.md](docs/DBUS_SPEC_AR.md) | مواصفات واجهة D-Bus Session Bus |

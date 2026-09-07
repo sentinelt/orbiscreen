@@ -6,6 +6,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.24.0
+Version:        0.24.1
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -103,6 +104,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Mon Sep 07 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.24.1-1
+- Release 0.24.1: UDP Annex-B video transport with per-client DPLPMTUD, KWin dynamic virtual display with Direct Touch binding, and send-to-assemble delay metrics.
+
 * Mon Sep 07 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.24.0-1
 - Release 0.24.0: Harmonize UI/UX and Catppuccin Mocha colors between Web and Android, remove Blank Display action, strengthen Web CSP, sanitize daemon input coordinates, and enforce clean comment standards.
 

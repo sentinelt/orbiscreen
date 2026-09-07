@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+## [v0.24.1] - 2026-09-07
 
 ### ⚡ Performance & Low Latency
 - **UDP Annex-B Video Transport (`orbiscreen-transport`, Android Client)**:
@@ -19,6 +20,13 @@ All notable changes to this project will be documented in this file.
   - Bind only when this session owns an enabled Orbiscreen virtual output (`outputName` + `outputUuid`, `mapToWorkspace = false`).
   - Direct Touch writes evdev type-B slots on the virtual touchscreen and lifts the pen before the first finger.
   - After the last HTTP/UDP client disconnects, lift `BTN_TOOL_PEN` and close the KWin virtual output so it leaves the layout. The next client recreates the stream (retrying unpark while still present), rebinds input to the new connector, and requests an IDR. A parked capture waits quietly instead of warning every frame.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to 0.24.1 across all 7 crates and updated `Cargo.lock`.
+- **Android Client**: Incremented `versionCode` to 71; updated `versionName` to "0.24.1".
+- **COPR / RPM Spec** (`data/orbiscreen-copr.spec`): Updated to version 0.24.1 with validated `%changelog`.
+- **debian/changelog**: Added 0.24.1-1 release entry for Ubuntu noble.
+- **PKGBUILD**: Bumped `pkgver` to 0.24.1.
 
 ## [v0.24.0] - 2026-09-07
 
