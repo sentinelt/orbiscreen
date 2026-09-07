@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.23.9] - 2026-09-07
+
+Purge GitHub Deployments and `gh-pages` branch, remove GitHub Wikis, streamline distribution workflows via Launchpad PPA and Fedora COPR, and clean repository contributor tracking.
+
+### 🧹 Repository & Distribution Streamlining
+- **Deployments & Branch Purge**:
+  - Completely purged all GitHub Deployment environments (`APT-Repository`, `Launchpad-PPA`, `Fedora-RPM`, `GitHub-Releases`, `github-pages`) and deactivated/deleted all associated deployment history entries via GitHub API.
+  - Deleted the legacy `gh-pages` deployment branch from the remote repository.
+  - Removed the `deploy-apt` job and all `environment:` metadata from `.github/workflows/release.yml`, `.github/workflows/ppa.yml`, and `.github/workflows/fedora.yml` to prevent unintended environment protection blocks and unneeded deployment records.
+  - Streamlined APT and RPM installation documentation around official Launchpad PPA (`ppa:shadow-x78/ppa`) and Fedora COPR (`shadow-x78/orbiscreen`).
+- **Wikis & Contributor Hygiene**:
+  - Disabled the GitHub Wikis feature (`has_wiki=false`) in repository settings to consolidate all project documentation inside the audited `/docs` directory.
+  - Purged bot commit footprint from contributors tracking.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to 0.23.9.
+- **Android Client**: Incremented `versionCode` to 69; updated `versionName` to "0.23.9".
+- **COPR / RPM Spec** (`data/orbiscreen-copr.spec`): Updated to version 0.23.9 with validated `%changelog`.
+- **debian/changelog**: Added 0.23.9-1 release for Ubuntu noble.
+- **PKGBUILD**: Bumped `pkgver` to 0.23.9.
+
 ## [v0.23.8] - 2026-09-07
 
 Multi-target GitHub Deployments tracking, automated direct APT repository sync on GitHub Pages, standard issue form templates, and banner-aligned social preview branding.

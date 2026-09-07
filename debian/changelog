@@ -1,3 +1,11 @@
+orbiscreen (0.23.9-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.23.9 for Ubuntu noble.
+  * Purge GitHub Deployments and gh-pages deployment branch.
+  * Streamline packaging workflows via official Launchpad PPA and Fedora COPR.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Mon, 07 Sep 2026 12:30:00 +0300
+
 orbiscreen (0.23.8-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.23.8 for Ubuntu noble.

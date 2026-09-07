@@ -2,8 +2,7 @@
 
 # دليل التغليف متعدد التوزيعات - Orbiscreen
 
-[![الإصدار](https://img.shields.io/badge/version-0.23.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
-[![الإصدار](https://img.shields.io/badge/version-0.23.8-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.23.9-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
 ![المنصّة](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -18,8 +17,7 @@
 
 ---
 
-مصفوفة الإصدار: `0.23.7` (مساحة العمل)، `versionCode = 67` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
-مصفوفة الإصدار: `0.23.8` (مساحة العمل)، `versionCode = 68` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.23.9` (مساحة العمل)، `versionCode = 69` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
 
 يوفّر Orbiscreen تكوينات البناء وتعريفات الحزم لجميع توزيعات Linux الرئيسية وAndroid:
 
@@ -102,15 +100,6 @@ dnf install orbiscreen
 ```bash
 sudo add-apt-repository ppa:shadow-x78/ppa -y
 sudo apt update
-sudo apt install orbiscreen -y
-```
-
-أو عبر مستودع APT المباشر:
-```bash
-curl -fsSL https://shadow-x78.github.io/orbiscreen/KEY.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/orbiscreen.gpg
-echo "deb [signed-by=/etc/apt/keyrings/orbiscreen.gpg] https://shadow-x78.github.io/orbiscreen /" | sudo tee /etc/apt/sources.list.d/orbiscreen.list
-sudo apt update
-sudo apt install orbiscreen -y
 ```
 
 ---
@@ -143,11 +132,9 @@ rpm -K orbiscreen_x86_64.rpm
 
 ## 🚀 مصفوفة إصدارات GitHub Actions
 
-عند دفع وسم إصدار (مثلاً `git tag v0.23.7 && git push origin v0.23.7`)، يبني سير العمل `.github/workflows/release.yml` تلقائياً جميع حزم الإصدار ويرفقها بصفحة GitHub Releases.
-عند دفع وسم إصدار (مثلاً `git tag v0.23.8 && git push origin v0.23.8`)، يبني سير العمل `.github/workflows/release.yml` تلقائياً جميع حزم الإصدار ويرفقها بصفحة GitHub Releases.
+عند دفع وسم إصدار (مثلاً `git tag v0.23.9 && git push origin v0.23.9`)، يبني سير العمل `.github/workflows/release.yml` تلقائياً جميع حزم الإصدار ويرفقها بصفحة GitHub Releases.
  
-يُولَّد محتوى `body` للإصدار من كتلة `## [v0.23.7]` في `CHANGELOG.md`.
-يُولَّد محتوى `body` للإصدار من كتلة `## [v0.23.8]` في `CHANGELOG.md`.
+يُولَّد محتوى `body` للإصدار من كتلة `## [v0.23.9]` في `CHANGELOG.md`.
 
 ---
 

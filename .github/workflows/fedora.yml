@@ -31,9 +31,6 @@ jobs:
   fedora:
     name: Fedora (${{ github.event.inputs.fedora_version || 'latest' }}) - Build, Test & RPM
     runs-on: ubuntu-latest
-    environment:
-      name: Fedora-RPM
-      url: https://copr.fedorainfracloud.org/coprs/shadow-x78/orbiscreen/
     container:
       image: fedora:${{ github.event.inputs.fedora_version || 'latest' }}
       options: --user root

@@ -2,8 +2,7 @@
 
 # Multi-Distro Packaging Guide - Orbiscreen
 
-[![Version](https://img.shields.io/badge/version-0.23.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
-[![Version](https://img.shields.io/badge/version-0.23.8-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.23.9-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -28,8 +27,7 @@
 <a id="packaging-matrix"></a>
 ## 📦 Packaging Matrix
 
-The release matrix is: `0.23.7` (workspace), `versionCode = 67` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
-The release matrix is: `0.23.8` (workspace), `versionCode = 68` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.23.9` (workspace), `versionCode = 69` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 
 Orbiscreen provides build configurations and package definitions for all major Linux distributions and Android:
 
@@ -112,15 +110,6 @@ Official Launchpad PPA:
 ```bash
 sudo add-apt-repository ppa:shadow-x78/ppa -y
 sudo apt update
-sudo apt install orbiscreen -y
-```
-
-Or configure the direct APT repository:
-```bash
-curl -fsSL https://shadow-x78.github.io/orbiscreen/KEY.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/orbiscreen.gpg
-echo "deb [signed-by=/etc/apt/keyrings/orbiscreen.gpg] https://shadow-x78.github.io/orbiscreen /" | sudo tee /etc/apt/sources.list.d/orbiscreen.list
-sudo apt update
-sudo apt install orbiscreen -y
 ```
 
 ---
@@ -153,11 +142,9 @@ rpm -K orbiscreen_x86_64.rpm
 
 ## 🚀 GitHub Actions Release Matrix
 
-When a version tag is pushed (e.g. `git tag v0.23.7 && git push origin v0.23.7`), the `.github/workflows/release.yml` workflow automatically builds and attaches all release packages to the GitHub Releases page.
-When a version tag is pushed (e.g. `git tag v0.23.8 && git push origin v0.23.8`), the `.github/workflows/release.yml` workflow automatically builds and attaches all release packages to the GitHub Releases page.
+When a version tag is pushed (e.g. `git tag v0.23.9 && git push origin v0.23.9`), the `.github/workflows/release.yml` workflow automatically builds and attaches all release packages to the GitHub Releases page.
  
-The release `body` is generated from the `## [v0.23.7]` block in `CHANGELOG.md`.
-The release `body` is generated from the `## [v0.23.8]` block in `CHANGELOG.md`.
+The release `body` is generated from the `## [v0.23.9]` block in `CHANGELOG.md`.
 
 ---
 

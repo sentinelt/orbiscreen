@@ -5,7 +5,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.23.8
+Version:        0.23.9
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -103,6 +103,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Mon Sep 07 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.23.9-1
+- Release 0.23.9: Purge GitHub Deployments and gh-pages branch, streamline distribution via Launchpad PPA and Fedora COPR.
+
 * Mon Sep 07 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.23.8-1
 - Release 0.23.8: GitHub multi-target deployment environments, banner-aligned social preview, standard issue forms, and gh-pages APT repository sync.
 
