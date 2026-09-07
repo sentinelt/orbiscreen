@@ -4,6 +4,7 @@
 pub mod adb;
 pub mod aoa;
 pub mod mdns;
+pub mod udp_stream;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -55,13 +56,28 @@ pub struct ServerConfig {
     pub client_web_dir: PathBuf,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Stats {
     frames_forwarded: AtomicU64,
     active_clients: AtomicUsize,
     total_clients: AtomicU64,
     auth_failures: AtomicU64,
     usb_devices: AtomicUsize,
+    presence: tokio::sync::watch::Sender<bool>,
+}
+
+impl Default for Stats {
+    fn default() -> Self {
+        let (presence, _) = tokio::sync::watch::channel(false);
+        Self {
+            frames_forwarded: AtomicU64::new(0),
+            active_clients: AtomicUsize::new(0),
+            total_clients: AtomicU64::new(0),
+            auth_failures: AtomicU64::new(0),
+            usb_devices: AtomicUsize::new(0),
+            presence,
+        }
+    }
 }
 
 impl Stats {
@@ -97,13 +113,33 @@ impl Stats {
         self.usb_devices.store(count, Ordering::Relaxed);
     }
 
+    pub fn subscribe_presence(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.presence.subscribe()
+    }
+
     pub fn client_started(&self) {
-        self.active_clients.fetch_add(1, Ordering::Relaxed);
+        let prev = self.active_clients.fetch_add(1, Ordering::Relaxed);
         self.total_clients.fetch_add(1, Ordering::Relaxed);
+        if prev == 0 {
+            let _ = self.presence.send(true);
+        }
     }
 
     pub fn client_stopped(&self) {
-        self.active_clients.fetch_sub(1, Ordering::Relaxed);
+        loop {
+            let cur = self.active_clients.load(Ordering::Relaxed);
+            let next = cur.saturating_sub(1);
+            if self
+                .active_clients
+                .compare_exchange(cur, next, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                if cur == 1 {
+                    let _ = self.presence.send(false);
+                }
+                break;
+            }
+        }
     }
 }
 
@@ -123,7 +159,7 @@ pub fn generate_token() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn token_eq(a: &str, b: &str) -> bool {
+pub(crate) fn token_eq(a: &str, b: &str) -> bool {
     let ab = a.as_bytes();
     let bb = b.as_bytes();
     let max_len = ab.len().max(bb.len());
@@ -201,6 +237,25 @@ impl Transport {
             .map(|a| a.to_string())
             .unwrap_or_else(|_| "?".into());
         info!("orbiscreen transport listening on http://{local}");
+
+        let udp_port = udp_stream::default_udp_port(self.cfg.signaling_port);
+        let udp_video = state.video_tx.subscribe();
+        let udp_idr = state.idr_tx.clone();
+        let udp_stats = state.stats.clone();
+        let udp_token = state.token.clone();
+        let udp_shutdown = shutdown_rx.clone();
+        tokio::spawn(async move {
+            udp_stream::run_udp_hub(
+                udp_port,
+                udp_token,
+                udp_video,
+                udp_idr,
+                udp_stats,
+                udp_shutdown,
+                udp_stream::UdpLimits::from_env(),
+            )
+            .await;
+        });
 
         let aoa_port = self.cfg.signaling_port;
         let aoa_active = Arc::new(AtomicUsize::new(0));
@@ -380,6 +435,8 @@ async fn api_info(State(state): State<AppState>) -> impl IntoResponse {
         "refresh_hz": state.refresh_hz,
         "encoder": state.encoder_kind,
         "version": state.version,
+        "udp_port": udp_stream::default_udp_port(state.config.signaling_port),
+        "transport": ["http-mpegts", "udp-annexb"],
     });
     Json(envelope)
 }
@@ -875,6 +932,14 @@ mod tests {
         assert_eq!(stats.active_clients(), 1);
         assert_eq!(stats.total_clients(), 2);
         drop(ClientGuard(Arc::clone(&stats)));
+        assert_eq!(stats.active_clients(), 0);
+        let presence = stats.subscribe_presence();
+        assert!(!*presence.borrow());
+        stats.client_started();
+        assert!(*stats.subscribe_presence().borrow());
+        stats.client_stopped();
+        assert!(!*stats.subscribe_presence().borrow());
+        stats.client_stopped();
         assert_eq!(stats.active_clients(), 0);
     }
 

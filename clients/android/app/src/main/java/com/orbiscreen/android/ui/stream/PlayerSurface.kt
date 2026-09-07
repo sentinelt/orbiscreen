@@ -3,40 +3,28 @@
 
 package com.orbiscreen.android.ui.stream
 
+import android.content.Context
+import android.graphics.Color
 import android.util.Log
 import android.view.MotionEvent
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.orbiscreen.android.player.UdpPlayer
+import kotlin.math.roundToInt
 
 private const val TAG = "Orbi.Surface"
-
-internal data class ContentRect(val offsetX: Float, val offsetY: Float, val w: Float, val h: Float)
-
-internal fun computeContentRect(viewW: Int, viewH: Int, streamW: Int, streamH: Int, scaleMode: Int = 0): ContentRect {
-    if (streamW <= 0 || streamH <= 0 || viewW <= 0 || viewH <= 0) {
-        return ContentRect(0f, 0f, viewW.toFloat().coerceAtLeast(1f), viewH.toFloat().coerceAtLeast(1f))
-    }
-    if (scaleMode == 3) {
-        return ContentRect(0f, 0f, viewW.toFloat(), viewH.toFloat())
-    }
-    val streamAspect = streamW.toFloat() / streamH.toFloat()
-    val viewAspect = viewW.toFloat() / viewH.toFloat()
-    return if (streamAspect > viewAspect) {
-        val contentH = viewW / streamAspect
-        ContentRect(0f, (viewH - contentH) / 2f, viewW.toFloat(), contentH)
-    } else {
-        val contentW = viewH * streamAspect
-        ContentRect((viewW - contentW) / 2f, 0f, contentW, viewH.toFloat())
-    }
-}
 
 private class TouchCallbacksHolder(
     var isTouchMode: Boolean,
@@ -50,12 +38,70 @@ private class TouchCallbacksHolder(
     var onDoubleTap: (() -> Unit)?,
     var onStylus: ((Float, Float, Int, Int, Float, Float, Float) -> Unit)? = null,
     var scaleMode: Int = 0,
+    var streamWidth: Int = 1920,
+    var streamHeight: Int = 1080,
 )
+
+private class UdpVideoLayout(ctx: Context) : FrameLayout(ctx) {
+    private val surfaceView = SurfaceView(ctx)
+    private var bound: UdpPlayer? = null
+    private var streamW = 1920
+    private var streamH = 1080
+    private var scaleMode = 0
+    private val callback = object : SurfaceHolder.Callback {
+        override fun surfaceCreated(sh: SurfaceHolder) {
+            bound?.attachSurface(sh.surface)
+        }
+        override fun surfaceChanged(sh: SurfaceHolder, format: Int, w: Int, hgt: Int) {
+            bound?.attachSurface(sh.surface)
+        }
+        override fun surfaceDestroyed(sh: SurfaceHolder) {
+            bound?.detachSurface()
+        }
+    }
+
+    init {
+        setBackgroundColor(Color.BLACK)
+        keepScreenOn = true
+        surfaceView.holder.addCallback(callback)
+        addView(surfaceView)
+    }
+
+    fun bindPlayer(udp: UdpPlayer?) {
+        if (bound === udp) {
+            if (udp != null && surfaceView.holder.surface.isValid) {
+                udp.attachSurface(surfaceView.holder.surface)
+            }
+            return
+        }
+        bound?.detachSurface()
+        bound = udp
+        if (udp != null && surfaceView.holder.surface.isValid) {
+            udp.attachSurface(surfaceView.holder.surface)
+        }
+    }
+
+    fun setStream(width: Int, height: Int, mode: Int) {
+        if (streamW == width && streamH == height && scaleMode == mode) return
+        streamW = width
+        streamH = height
+        scaleMode = mode
+        requestLayout()
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val cr = computeContentRect(right - left, bottom - top, streamW, streamH, scaleMode)
+        val sl = cr.offsetX.roundToInt()
+        val st = cr.offsetY.roundToInt()
+        surfaceView.layout(sl, st, sl + cr.w.roundToInt().coerceAtLeast(1), st + cr.h.roundToInt().coerceAtLeast(1))
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerSurface(
     player: ExoPlayer?,
+    udp: UdpPlayer? = null,
     isTouchMode: Boolean,
     onMove: (Float, Float, Int, Int) -> Unit,
     onPointer: (Float?, Float?, Int, Int, Int, Boolean) -> Unit,
@@ -88,6 +134,8 @@ fun PlayerSurface(
 
     holder.isTouchMode = isTouchMode
     holder.scaleMode = scaleMode
+    holder.streamWidth = streamWidth
+    holder.streamHeight = streamHeight
     holder.onMove = onMove
     holder.onPointer = onPointer
     holder.onTouch = onTouch
@@ -98,6 +146,7 @@ fun PlayerSurface(
     holder.onDoubleTap = onDoubleTap
     holder.onStylus = onStylus
 
+    key(udp != null, udp) {
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { ctx ->
@@ -114,6 +163,16 @@ fun PlayerSurface(
             val doubleTapMaxMs = 300L
             val doubleTapMaxDistPx = 80f
 
+            val video = if (udp != null) {
+                UdpVideoLayout(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                    bindPlayer(udp)
+                    setStream(holder.streamWidth, holder.streamHeight, holder.scaleMode)
+                }
+            } else {
             PlayerView(ctx).apply {
                 useController = false
                 layoutParams = ViewGroup.LayoutParams(
@@ -123,6 +182,11 @@ fun PlayerSurface(
                 setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                 keepScreenOn = true
                 resizeMode = scaleMode
+                this.player = player
+            }
+            }
+            video.apply {
+                keepScreenOn = true
                 isClickable = true
                 isFocusable = true
                 requestFocus()
@@ -130,7 +194,7 @@ fun PlayerSurface(
                 setOnGenericMotionListener { _, ev ->
                     val toolType = ev.getToolType(0)
                     if ((toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) && holder.onStylus != null) {
-                        val cr = computeContentRect(width, height, streamWidth, streamHeight, holder.scaleMode)
+                        val cr = computeContentRect(width, height, holder.streamWidth, holder.streamHeight, holder.scaleMode)
                         val cx = (ev.x - cr.offsetX).coerceIn(0f, cr.w)
                         val cy = (ev.y - cr.offsetY).coerceIn(0f, cr.h)
                         val pressure = ev.pressure
@@ -151,7 +215,7 @@ fun PlayerSurface(
                     val toolType = ev.getToolType(0)
                     val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
                     if (isStylus && holder.onStylus != null) {
-                        val cr = computeContentRect(w, hPx, streamWidth, streamHeight, holder.scaleMode)
+                        val cr = computeContentRect(w, hPx, holder.streamWidth, holder.streamHeight, holder.scaleMode)
                         val cx = (ev.x - cr.offsetX).coerceIn(0f, cr.w)
                         val cy = (ev.y - cr.offsetY).coerceIn(0f, cr.h)
                         val pressure = if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) 0f else ev.pressure.coerceAtLeast(0.1f)
@@ -165,7 +229,7 @@ fun PlayerSurface(
                     }
 
                     if (holder.isTouchMode) {
-                        val cr = computeContentRect(w, hPx, streamWidth, streamHeight, holder.scaleMode)
+                        val cr = computeContentRect(w, hPx, holder.streamWidth, holder.streamHeight, holder.scaleMode)
                         val cw = cr.w.toInt().coerceAtLeast(1)
                         val ch = cr.h.toInt().coerceAtLeast(1)
                         val mapped = { idx: Int ->
@@ -233,9 +297,9 @@ fun PlayerSurface(
                                     val dy = ev.y - lastY
                                     if (kotlin.math.abs(dx) > 1.5f || kotlin.math.abs(dy) > 1.5f) {
                                         moved = true
-                                        val cr = computeContentRect(w, hPx, streamWidth, streamHeight, holder.scaleMode)
-                                        val scaleX = streamWidth.toFloat() / cr.w.coerceAtLeast(1f)
-                                        val scaleY = streamHeight.toFloat() / cr.h.coerceAtLeast(1f)
+                                        val cr = computeContentRect(w, hPx, holder.streamWidth, holder.streamHeight, holder.scaleMode)
+                                        val scaleX = holder.streamWidth.toFloat() / cr.w.coerceAtLeast(1f)
+                                        val scaleY = holder.streamHeight.toFloat() / cr.h.coerceAtLeast(1f)
                                         holder.onDeltaMove(dx * scaleX, dy * scaleY)
                                         lastX = ev.x
                                         lastY = ev.y
@@ -285,8 +349,15 @@ fun PlayerSurface(
             }
         },
         update = { view ->
-            view.player = player
-            view.resizeMode = scaleMode
+            (view as? PlayerView)?.let {
+                it.player = player
+                it.resizeMode = scaleMode
+            }
+            (view as? UdpVideoLayout)?.let {
+                it.bindPlayer(udp)
+                it.setStream(holder.streamWidth, holder.streamHeight, holder.scaleMode)
+            }
         },
     )
+    }
 }

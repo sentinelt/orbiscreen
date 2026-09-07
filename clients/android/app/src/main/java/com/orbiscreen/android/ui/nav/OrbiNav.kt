@@ -38,13 +38,18 @@ object Routes {
 }
 
 @Composable
-fun OrbiNav(prefs: PrefsStore) {
+fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788) {
     val nav = rememberNavController()
     val appContext = LocalContext.current.applicationContext
+    val start = if (!startHost.isNullOrBlank()) {
+        Routes.stream(startHost, startPort)
+    } else {
+        Routes.DISCOVERY
+    }
 
     NavHost(
         navController = nav,
-        startDestination = Routes.DISCOVERY,
+        startDestination = start,
         enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it / 4 } + fadeIn(tween(220)) },
         exitTransition = { fadeOut(tween(120)) },
         popEnterTransition = { slideInHorizontally(animationSpec = tween(220)) { it / 4 } + fadeIn(tween(220)) },

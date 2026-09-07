@@ -43,6 +43,8 @@ pub enum CaptureError {
     X11Protocol(u8),
     #[error("capture I/O error: {0}")]
     Io(String),
+    #[error("virtual output parked")]
+    Parked,
 }
 
 impl From<x11rb::xcb_ffi::ConnectError> for CaptureError {
@@ -144,11 +146,75 @@ pub(crate) fn sample_to_captured_frame(
     })
 }
 
+struct KwinSlot {
+    capture: Option<std::sync::Arc<kwin_virtual::KwinVirtualCapture>>,
+    width: u32,
+    height: u32,
+    connector: Option<String>,
+}
+
+#[derive(Clone)]
+#[allow(missing_debug_implementations)]
+pub struct VirtualOutputLease {
+    kwin: Option<std::sync::Arc<tokio::sync::Mutex<KwinSlot>>>,
+}
+
+impl VirtualOutputLease {
+    pub fn none() -> Self {
+        Self { kwin: None }
+    }
+
+    pub async fn park(&self) {
+        let Some(slot) = &self.kwin else {
+            return;
+        };
+        let mut guard = slot.lock().await;
+        if guard.capture.take().is_some() {
+            tracing::info!("parked KWin virtual output");
+        }
+    }
+
+    pub async fn unpark(&self) -> Result<bool, CaptureError> {
+        let Some(slot) = &self.kwin else {
+            return Ok(false);
+        };
+        let (width, height) = {
+            let guard = slot.lock().await;
+            if guard.capture.is_some() {
+                return Ok(false);
+            }
+            (guard.width, guard.height)
+        };
+        let capture = tokio::task::spawn_blocking(move || {
+            kwin_virtual::KwinVirtualCapture::open(kwin_virtual::KwinVirtualSpec { width, height })
+        })
+        .await
+        .map_err(|e| CaptureError::Io(format!("kwin-virtual unpark task: {e}")))??;
+        let connector = capture.connector_name().to_string();
+        {
+            let mut guard = slot.lock().await;
+            guard.connector = Some(connector.clone());
+            guard.capture = Some(std::sync::Arc::new(capture));
+        }
+        tracing::info!(connector, "restored KWin virtual output");
+        Ok(true)
+    }
+
+    pub fn is_kwin(&self) -> bool {
+        self.kwin.is_some()
+    }
+
+    pub async fn connector_name(&self) -> Option<String> {
+        let slot = self.kwin.as_ref()?;
+        slot.lock().await.connector.clone()
+    }
+}
+
 #[allow(missing_debug_implementations)]
 enum CaptureInner {
     X11(x11::X11Capture),
     Wayland(wayland::WaylandCapture),
-    KwinVirtual(kwin_virtual::KwinVirtualCapture),
+    KwinVirtual(std::sync::Arc<tokio::sync::Mutex<KwinSlot>>),
     WlrScreencopy(wlr_screencopy::WlrScreencopyCapture),
 }
 
@@ -189,9 +255,16 @@ impl CaptureSession {
         tracing::info!(
             "KWin virtual display created via zkde-screencast: no root, no share dialog"
         );
+        let connector = capture.connector_name().to_string();
+        let slot = std::sync::Arc::new(tokio::sync::Mutex::new(KwinSlot {
+            capture: Some(std::sync::Arc::new(capture)),
+            width: actual_w,
+            height: actual_h,
+            connector: Some(connector),
+        }));
         Ok(Self {
             backend_kind: CaptureBackend::KwinVirtual,
-            inner: Arc::new(CaptureInner::KwinVirtual(capture)),
+            inner: Arc::new(CaptureInner::KwinVirtual(slot)),
             width: actual_w,
             height: actual_h,
         })
@@ -257,9 +330,29 @@ impl CaptureSession {
 
     pub fn is_ended(&self) -> bool {
         match self.inner.as_ref() {
-            CaptureInner::KwinVirtual(capture) => capture.is_ended(),
+            CaptureInner::KwinVirtual(slot) => slot
+                .try_lock()
+                .ok()
+                .and_then(|g| g.capture.as_ref().map(|c| c.is_ended()))
+                .unwrap_or(false),
             CaptureInner::WlrScreencopy(capture) => capture.is_ended(),
             CaptureInner::X11(_) | CaptureInner::Wayland(_) => false,
+        }
+    }
+
+    pub fn virtual_output_lease(&self) -> VirtualOutputLease {
+        match self.inner.as_ref() {
+            CaptureInner::KwinVirtual(slot) => VirtualOutputLease {
+                kwin: Some(slot.clone()),
+            },
+            _ => VirtualOutputLease { kwin: None },
+        }
+    }
+
+    pub async fn virtual_output_name(&self) -> Option<String> {
+        match self.inner.as_ref() {
+            CaptureInner::KwinVirtual(slot) => slot.lock().await.connector.clone(),
+            _ => None,
         }
     }
 
@@ -275,7 +368,13 @@ impl CaptureSession {
         match self.inner.as_ref() {
             CaptureInner::X11(capture) => capture.next_frame().await,
             CaptureInner::Wayland(capture) => capture.next_frame().await,
-            CaptureInner::KwinVirtual(capture) => capture.next_frame().await,
+            CaptureInner::KwinVirtual(slot) => {
+                let cap = slot.lock().await.capture.clone();
+                match cap {
+                    Some(capture) => capture.next_frame().await,
+                    None => Err(CaptureError::Parked),
+                }
+            }
             CaptureInner::WlrScreencopy(capture) => capture.next_frame().await,
         }
     }

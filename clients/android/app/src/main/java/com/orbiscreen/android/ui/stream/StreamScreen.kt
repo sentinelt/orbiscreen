@@ -133,6 +133,7 @@ fun StreamScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val player = viewModel.player.collectAsState().value
+    val udp = viewModel.udpPlayer.collectAsState().value
     var showControls by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showExitConfirmDialog by remember { mutableStateOf(false) }
@@ -179,7 +180,7 @@ fun StreamScreen(
 
     LaunchedEffect(showControls) {
         if (showControls) {
-            delay(4000)
+            delay(12_000)
             showControls = false
         }
     }
@@ -232,10 +233,12 @@ fun StreamScreen(
             label = "cornerFab",
         )
 
-        if (player != null) {
+        val udpLat = udp?.latencyMs?.collectAsState()?.value
+        if (player != null || udp != null) {
             val input = remember { viewModel.ensureInput() }
             PlayerSurface(
                 player = player,
+                udp = udp,
                 isTouchMode = isTouchMode,
                 streamWidth = state.displayWidth,
                 streamHeight = state.displayHeight,
@@ -262,7 +265,6 @@ fun StreamScreen(
                 } else null,
             )
         }
-
         if (state.event !is StreamEvent.Playing && state.event !is StreamEvent.Buffering) {
             StatusOverlay(
                 event = state.event,
@@ -279,8 +281,9 @@ fun StreamScreen(
         ) {
             ControlToolbar(
                 hostLabel = if (state.host == "127.0.0.1") "USB · Orbiscreen" else state.host,
-                encoder = state.encoder,
+                encoder = if (udp != null) "${state.encoder} · UDP" else state.encoder,
                 resolution = "${state.displayWidth}×${state.displayHeight}",
+                delayMs = udpLat,
                 isTouchMode = isTouchMode,
                 onToggleInputMode = {
                     isTouchMode = !isTouchMode

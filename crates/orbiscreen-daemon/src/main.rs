@@ -11,7 +11,7 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 use orbiscreen_capture::capabilities::{Capabilities, CaptureStep};
 use orbiscreen_capture::wlr_virtual_output::{VirtualOutputSpec, WlrootsVirtualOutput};
-use orbiscreen_capture::{CaptureBackend, CapturePreference, CaptureSession};
+use orbiscreen_capture::{CapturePreference, CaptureSession};
 use orbiscreen_core::{dump_config, load_config, Config};
 use orbiscreen_display::{DisplayStatus, EvdiFramePump, VirtualDisplaySpec};
 use orbiscreen_encode::{EncodeParams, Encoder, EncoderKind};
@@ -206,6 +206,7 @@ enum FrameSource {
 enum SourceOutcome {
     Frame(Frame),
     Retryable(String),
+    Parked,
     Ended,
 }
 
@@ -226,6 +227,7 @@ impl FrameSource {
                     height: frame.height,
                     data: frame.data,
                 }),
+                Err(orbiscreen_capture::CaptureError::Parked) => SourceOutcome::Parked,
                 Err(e) => SourceOutcome::Retryable(e.to_string()),
             },
             FrameSource::WlrVirtual { session, .. } => match session.next_frame().await {
@@ -234,6 +236,7 @@ impl FrameSource {
                     height: frame.height,
                     data: frame.data,
                 }),
+                Err(orbiscreen_capture::CaptureError::Parked) => SourceOutcome::Parked,
                 Err(e) => SourceOutcome::Retryable(e.to_string()),
             },
         }
@@ -265,6 +268,24 @@ impl FrameSource {
             FrameSource::Evdi(pump, _) => pump.actual_dimensions(),
             FrameSource::Capture(capture) => (capture.width(), capture.height()),
             FrameSource::WlrVirtual { session, .. } => (session.width(), session.height()),
+        }
+    }
+
+    fn virtual_output_lease(&self) -> orbiscreen_capture::VirtualOutputLease {
+        match self {
+            FrameSource::Capture(capture)
+            | FrameSource::WlrVirtual {
+                session: capture, ..
+            } => capture.virtual_output_lease(),
+            FrameSource::Evdi(_, _) => orbiscreen_capture::VirtualOutputLease::none(),
+        }
+    }
+
+    async fn virtual_output_name(&self) -> Option<String> {
+        match self {
+            FrameSource::WlrVirtual { output, .. } => Some(output.name().to_string()),
+            FrameSource::Capture(capture) => capture.virtual_output_name().await,
+            FrameSource::Evdi(_, _) => None,
         }
     }
 }
@@ -1108,14 +1129,28 @@ async fn try_capture_step(
             Ok(FrameSource::Capture(capture))
         }
         CaptureStep::KwinVirtual => {
-            let capture = CaptureSession::open_with_preference(
-                spec.width,
-                spec.height,
-                CapturePreference::KwinVirtual,
-            )
-            .await?;
-            info!(backend = ?capture.backend(), "Capture backend open");
-            Ok(FrameSource::Capture(capture))
+            let mut last_err: Option<DynError> = None;
+            for attempt in 1..=3 {
+                match CaptureSession::open_with_preference(
+                    spec.width,
+                    spec.height,
+                    CapturePreference::KwinVirtual,
+                )
+                .await
+                {
+                    Ok(capture) => {
+                        orbiscreen_capture::kwin_virtual::disable_stale_portal_virtual_outputs();
+                        info!(backend = ?capture.backend(), attempt, "Capture backend open");
+                        return Ok(FrameSource::Capture(capture));
+                    }
+                    Err(e) => {
+                        warn!(attempt, "KWin virtual output failed: {e}");
+                        last_err = Some(e.into());
+                        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                    }
+                }
+            }
+            Err(last_err.unwrap_or_else(|| "KWin virtual output failed".into()))
         }
         CaptureStep::Portal => {
             let capture = CaptureSession::open_with_preference(
@@ -1253,9 +1288,115 @@ async fn portal_available() -> Option<bool> {
     Some(owned)
 }
 
-async fn bind_kwin_virtual_inputs(target_output: &str) {
+async fn run_idle_virtual_output(
+    mut presence: tokio::sync::watch::Receiver<bool>,
+    lease: orbiscreen_capture::VirtualOutputLease,
+    input_tx: tokio::sync::mpsc::Sender<orbiscreen_transport::IncomingInput>,
+    idr_tx: tokio::sync::mpsc::Sender<()>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    const IDLE: std::time::Duration = std::time::Duration::from_secs(2);
+    let mut display_up = true;
+    loop {
+        if *shutdown.borrow() {
+            break;
+        }
+        if *presence.borrow_and_update() {
+            if !display_up {
+                display_up =
+                    restore_virtual_output(&lease, &idr_tx, &mut presence, &mut shutdown).await;
+                if !display_up {
+                    tokio::select! {
+                        _ = shutdown.changed() => break,
+                        _ = tokio::time::sleep(IDLE) => {}
+                        res = presence.changed() => {
+                            if res.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            tokio::select! {
+                _ = shutdown.changed() => break,
+                res = presence.changed() => {
+                    if res.is_err() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            _ = tokio::time::sleep(IDLE) => {}
+            res = presence.changed() => {
+                if res.is_err() {
+                    break;
+                }
+                continue;
+            }
+        }
+        if *presence.borrow() {
+            continue;
+        }
+        let _ = input_tx.try_send(orbiscreen_transport::IncomingInput::Stylus(
+            orbiscreen_input::StylusEvent::Proximity {},
+        ));
+        if display_up && lease.is_kwin() {
+            lease.park().await;
+            display_up = false;
+        }
+    }
+}
+
+async fn restore_virtual_output(
+    lease: &orbiscreen_capture::VirtualOutputLease,
+    idr_tx: &tokio::sync::mpsc::Sender<()>,
+    presence: &mut tokio::sync::watch::Receiver<bool>,
+    shutdown: &mut tokio::sync::watch::Receiver<bool>,
+) -> bool {
+    const ATTEMPTS: u32 = 3;
+    const BACKOFF: std::time::Duration = std::time::Duration::from_millis(400);
+    for attempt in 1..=ATTEMPTS {
+        match lease.unpark().await {
+            Ok(true) => {
+                if let Some(name) = lease.connector_name().await {
+                    bind_kwin_virtual_inputs(name).await;
+                }
+                let _ = idr_tx.try_send(());
+                return true;
+            }
+            Ok(false) => return true,
+            Err(e) => {
+                warn!(attempt, "could not restore virtual output: {e}");
+                if attempt == ATTEMPTS {
+                    return false;
+                }
+                tokio::select! {
+                    _ = shutdown.changed() => return false,
+                    _ = tokio::time::sleep(BACKOFF) => {}
+                    res = presence.changed() => {
+                        if res.is_err() || !*presence.borrow() {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+async fn bind_kwin_virtual_inputs(preferred_output: String) {
     for delay_ms in [250, 500, 1000, 2000] {
         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        let Some(target_output) = orbiscreen_capture::kwin_virtual::preferred_tablet_output(Some(
+            preferred_output.as_str(),
+        )) else {
+            continue;
+        };
         if let Ok(conn) = zbus::Connection::session().await {
             let mut bound = 0;
             for idx in 0..64 {
@@ -1270,9 +1411,22 @@ async fn bind_kwin_virtual_inputs(target_output: &str) {
                 {
                     if let Ok(name) = proxy.get_property::<String>("name").await {
                         if name.starts_with("Orbiscreen") {
-                            let _ = proxy
-                                .set_property::<&str>("outputName", target_output)
-                                .await;
+                            if let Err(e) = proxy
+                                .set_property::<&str>("outputName", target_output.as_str())
+                                .await
+                            {
+                                warn!(
+                                    "could not set outputName={target_output} on {path} ({name}): {e}"
+                                );
+                                continue;
+                            }
+                            if let Some(uuid) =
+                                orbiscreen_capture::kwin_virtual::output_uuid(&target_output)
+                            {
+                                let _ = proxy
+                                    .set_property::<&str>("outputUuid", uuid.as_str())
+                                    .await;
+                            }
                             let _ = proxy.set_property::<bool>("mapToWorkspace", false).await;
                             info!(
                                 "bound KWin input device {path} ({name}) to output {target_output}"
@@ -1859,6 +2013,7 @@ async fn run_start(
     let caps = Capabilities::from_env();
     let frame_pool = orbiscreen_core::frame_pool::FramePool::new();
     let mut source = resolve_frame_source(preferred, &caps, spec, &frame_pool).await?;
+    let virtual_output = source.virtual_output_lease();
 
     let actual_dims = source.actual_dimensions();
     info!(
@@ -1867,28 +2022,26 @@ async fn run_start(
         "stream dimensions established from source"
     );
 
-    let captured_output_name = match &source {
-        FrameSource::WlrVirtual { output, .. } => Some(output.name().to_string()),
-        FrameSource::Capture(c) => match c.backend() {
-            CaptureBackend::KwinVirtual => Some("Virtual-ORBISCREEN".to_string()),
-            _ => None,
-        },
-        _ => None,
-    };
+    let captured_output_name = source.virtual_output_name().await;
+    if let Some(name) = captured_output_name.as_deref() {
+        info!(output = %name, "routing tablet input to KWin output");
+    } else if virtual_output.is_kwin() {
+        warn!("no virtual output to pin tablet input to; touch will land on the laptop screens");
+    }
     let target_kwin_output = captured_output_name.clone();
     let (injector_tx, injector_rx) = tokio::sync::oneshot::channel::<InputInjector>();
     let input_spec = VirtualTouchscreenSpec {
         width: spec.width,
         height: spec.height,
-        output_name: captured_output_name,
+        output_name: captured_output_name.clone(),
     };
     tokio::spawn(async move {
         match InputInjector::open_async(input_spec).await {
             Ok(inj) => {
                 info!(backend = ?inj.backend(), "Input injector open");
                 let _ = injector_tx.send(inj);
-                if let Some(out_name) = target_kwin_output {
-                    bind_kwin_virtual_inputs(&out_name).await;
+                if let Some(name) = target_kwin_output {
+                    bind_kwin_virtual_inputs(name).await;
                 }
             }
             Err(e) => {
@@ -2055,6 +2208,9 @@ async fn run_start(
                         }
                     }
                 }
+                SourceOutcome::Parked => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
                 SourceOutcome::Retryable(e) => {
                     if source.is_ended() {
                         error!("capture source ended terminally ({e}); stopping capture pump");
@@ -2090,6 +2246,17 @@ async fn run_start(
     });
 
     let (input_tx, mut input_rx) = mpsc::channel::<orbiscreen_transport::IncomingInput>(1024);
+    {
+        let presence = stats.subscribe_presence();
+        let idle_input = input_tx.clone();
+        let idle_idr = idr_tx.clone();
+        let idle_shutdown = shutdown_rx.clone();
+        let idle_lease = virtual_output;
+        tokio::spawn(async move {
+            run_idle_virtual_output(presence, idle_lease, idle_input, idle_idr, idle_shutdown)
+                .await;
+        });
+    }
     let input_pump = tokio::spawn(async move {
         use orbiscreen_input::PointerEvent;
         use orbiscreen_transport::IncomingInput;

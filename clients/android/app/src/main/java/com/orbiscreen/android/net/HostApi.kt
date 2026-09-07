@@ -34,6 +34,7 @@ class HostApi {
         val refreshHz: Int = 60,
         val encoder: String = "unknown",
         val version: String = "?",
+        val udpPort: Int = 0,
     )
 
     suspend fun token(host: String, port: Int): String? = withContext(Dispatchers.IO) {
@@ -71,6 +72,7 @@ class HostApi {
                         refreshHz = obj.optInt("refresh_hz", 60),
                         encoder = obj.optString("encoder", "unknown"),
                         version = obj.optString("version", "?"),
+                        udpPort = obj.optInt("udp_port", 0),
                     )
                 }
             } catch (e: Exception) {

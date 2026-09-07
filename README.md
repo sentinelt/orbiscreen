@@ -318,6 +318,7 @@ With hardware encoding enabled (NVIDIA NVENC or Intel/AMD VA-API on Linux, and M
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System topology, frame pipeline &amp; D-Bus architecture |
+| [UDP_TRANSPORT.md](docs/UDP_TRANSPORT.md) | UDP Annex-B video path, packet types, DPLPMTUD &amp; test hooks |
 | [DE_SUPPORT.md](docs/DE_SUPPORT.md) | Per-desktop support matrix, capture plans &amp; troubleshooting |
 | [PACKAGING.md](docs/PACKAGING.md) | Multi-distro packaging specs (.deb, .rpm, AppImage) |
 | [DBUS_SPEC.md](docs/DBUS_SPEC.md) | D-Bus Session Bus IPC interface specifications |

@@ -52,6 +52,7 @@ fun ControlToolbar(
     hostLabel: String,
     encoder: String,
     resolution: String,
+    delayMs: Int? = null,
     isTouchMode: Boolean = false,
     onToggleInputMode: () -> Unit = {},
     onToggleKeyboard: () -> Unit,
@@ -85,28 +86,36 @@ fun ControlToolbar(
                         .clip(CircleShape)
                         .background(ActiveGreen),
                 )
+            }
 
-                Column(modifier = Modifier.padding(end = 6.dp)) {
+            Column(modifier = Modifier.padding(end = 6.dp)) {
+                if (!isPortrait) {
                     Text(
                         text = hostLabel,
                         style = MaterialTheme.typography.labelLarge,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                     )
-                    val info = listOfNotNull(
-                        resolution.takeIf { it.isNotBlank() },
-                        encoder.takeIf { it.isNotBlank() },
-                    ).joinToString("  ")
-                    if (info.isNotBlank()) {
-                        Text(
-                            text = info,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 10.sp,
-                        )
-                    }
                 }
+                val delayText = if (delayMs != null && delayMs >= 0) {
+                    "delay ${delayMs}ms"
+                } else {
+                    "delay —"
+                }
+                val info = listOfNotNull(
+                    resolution.takeIf { it.isNotBlank() && !isPortrait },
+                    encoder.takeIf { it.isNotBlank() && !isPortrait },
+                    delayText,
+                ).joinToString("  ")
+                Text(
+                    text = info,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 10.sp,
+                )
+            }
 
+            if (!isPortrait) {
                 Spacer(Modifier.width(2.dp))
             }
 
