@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self' 'unsafe-inline'; media-src 'self' blob: data:" />
+          content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self';" />
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#11111b" />
@@ -170,7 +170,6 @@
             <div class="settingsGroup">
                 <label data-i18n="hostActions">Host Actions</label>
                 <div class="chipsRow">
-                    <button id="btnActionBlank" class="chipBtn" data-i18n="actionBlank">Blank Display</button>
                     <button id="btnActionResync" class="chipBtn" data-i18n="actionResync">Resync</button>
                 </div>
             </div>
@@ -189,10 +188,18 @@
         <div id="overlay" class="overlay">
             <div class="loadingContainer">
                 <svg id="brandLogo" class="brandLogo hidden" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="256" cy="256" r="170" stroke="#89B4FA" stroke-width="54"/>
-                    <circle cx="376" cy="376" r="62" fill="#74C7EC"/>
+                    <defs>
+                        <linearGradient id="brandBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#89b4fa"/>
+                            <stop offset="100%" stop-color="#74c7ec"/>
+                        </linearGradient>
+                    </defs>
+                    <circle cx="256" cy="256" r="220" fill="none" stroke="#89b4fa" stroke-width="2" opacity="0.18" stroke-dasharray="10 10"/>
+                    <circle cx="256" cy="256" r="170" fill="none" stroke="url(#brandBlue)" stroke-width="50"/>
+                    <circle cx="376" cy="376" r="62" fill="url(#brandBlue)"/>
+                    <circle cx="376" cy="376" r="62" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.4"/>
                 </svg>
-                <div id="statusSpinner" class="androidSpinner"></div>
+                <div id="statusSpinner" class="streamSpinner"></div>
                 <div id="statusIcon" class="statusIconContainer hidden">
                     <svg class="svgIconLarge" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M22.99 9C21.46 7.54 19.38 6.5 17 6.13L19.88 9h3.11zM12 4c-3.17 0-6.07 1.12-8.36 3l1.45 1.45C6.91 7.08 9.32 6.2 12 6.2c3.15 0 5.99 1.22 8.11 3.22L21.57 8C19.14 5.56 15.77 4 12 4zM1.39 4.22l2.28 2.28C2.12 7.5 1.05 8.7 1 8.75l10.99 13.7 3.32-4.14 4.47 4.47 1.41-1.41L1.39 4.22zM12 18.25L4.47 8.86C5.46 8.14 6.64 7.6 7.9 7.32l8.81 8.81-4.71 5.87v-3.75z"/>

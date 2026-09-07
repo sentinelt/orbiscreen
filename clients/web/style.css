@@ -561,7 +561,7 @@ html, body {
     display: none;
 }
 
-.androidSpinner {
+.streamSpinner {
     width: 44px;
     height: 44px;
     border: 3.5px solid #313244;
@@ -571,7 +571,7 @@ html, body {
     animation: spin 0.85s linear infinite;
 }
 
-.androidSpinner.hidden {
+.streamSpinner.hidden {
     display: none;
 }
 

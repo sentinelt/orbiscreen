@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.24.0] - 2026-09-07
+
+Harmonize UI/UX design and Catppuccin Mocha palette between Android and Web clients, eliminate redundant Blank Display action, strengthen Web CSP headers, sanitize input coordinates against non-finite values, enforce strict codebase comment standards, and purge dead build artifacts.
+
+### 🎨 UI/UX & Design Harmonization
+- **Authentic Vector Logo on Web Client**:
+  - Replaced the simplified inline placeholder SVG in `clients/web/index.html` with the authentic Orbiscreen vector logo (concentric orbit ring, brandBlue gradient, and orbiting display dot with glow) identical to the official project branding.
+- **Web Semantic Styling & Spinner**:
+  - Renamed `.androidSpinner` in `clients/web/style.css` and `index.html` to `.streamSpinner`.
+  - Harmonized Catppuccin Mocha dark theme tokens (`#11111b`, `#181825`, `#1e1e2e`, `#89b4fa`, `#74c7ec`, `#a6e3a1`, `#fab387`, `#f9e2af`, `#f38ba8`) between Web CSS variables and Android Jetpack Compose `Color.kt`.
+  - Preserved the on-screen virtual touch keyboard (`#keyboardDrawer`) in the Web client for touch tablets and mobile browsers.
+
+### ✂️ Feature Boundary & Redundancy Cleanup
+- **Blank Display Elimination**:
+  - Removed `#btnActionBlank` button from `clients/web/index.html` settings modal.
+  - Purged `actionBlank`, `actionTurnOn`, `actionTurnOff`, `toastBlanked`, and `toastUnblanked` from English and Arabic dictionaries in `clients/web/app.js`.
+  - Removed `isDpmsOff` state tracking and event listener from `clients/web/app.js`.
+  - Removed unused `onBlank: () -> Unit` parameter from `ControlToolbar.kt` in the Android client.
+  - Removed `onBlank = viewModel::blank` from `StreamScreen.kt` and purged `fun blank()` and `blanked` state from `StreamViewModel.kt`.
+  - Removed string resource `blank_screen` from `clients/android/app/src/main/res/values/strings.xml` and `values-ar/strings.xml`.
+
+### 🛡️ Security & Input Sanitization
+- **Daemon Input Bounds & NaN Protection**:
+  - In `crates/orbiscreen-daemon/src/main.rs`, added finite checks (`is_finite()`) to coordinate scaling in the input pump, immediately dropping `NaN` or `Infinity` coordinates.
+  - Clamped scaled pointer, touch, and stylus coordinates to `[0.0, spec.width]` and `[0.0, spec.height]`, preventing out-of-bounds cursor warps or uinput panics.
+- **Web Content Security Policy (CSP)**:
+  - Upgraded `<meta http-equiv="Content-Security-Policy">` in `clients/web/index.html` to strictly enforce allowed script, style, image, media, and WebSocket/HTTP connection sources (`connect-src 'self'`).
+
+### 🧹 Repository Hygiene & Comments Policy
+- **Dead Code & Comments Policy**:
+  - Stripped all inline and inside-code explanatory comments across Rust source files (`crates/orbiscreen-input/src/x11.rs`, etc.).
+  - Preserved top-of-file GPL-3.0-or-later credit/license headers across all source files.
+  - Maintained house box and section divider commenting standard (`# ── Section ──`) across all configuration and build files.
+- **Artifact Removal**:
+  - Removed untracked binary artifact `orbiscreen_x86_64.rpm` (4.0 MB) from repository root.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to 0.24.0 across all 7 crates and updated `Cargo.lock`.
+- **Android Client**: Incremented `versionCode` to 70; updated `versionName` to "0.24.0".
+- **COPR / RPM Spec** (`data/orbiscreen-copr.spec`): Updated to version 0.24.0 with validated `%changelog`.
+- **debian/changelog**: Added 0.24.0-1 release entry for Ubuntu noble.
+- **PKGBUILD**: Bumped `pkgver` to 0.24.0.
+
 ## [v0.23.9] - 2026-09-07
 
 Purge GitHub Deployments and `gh-pages` branch, remove GitHub Wikis, streamline distribution workflows via Launchpad PPA and Fedora COPR, and clean repository contributor tracking.

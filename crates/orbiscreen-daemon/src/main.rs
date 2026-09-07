@@ -2095,8 +2095,13 @@ async fn run_start(
         use orbiscreen_transport::IncomingInput;
         let (cap_w, cap_h) = cap_dims;
         let scale = |x: f64, y: f64| {
-            let x = x * f64::from(spec.width) / f64::from(cap_w.max(1));
-            let y = y * f64::from(spec.height) / f64::from(cap_h.max(1));
+            if !x.is_finite() || !y.is_finite() {
+                return (0.0, 0.0);
+            }
+            let x = (x * f64::from(spec.width) / f64::from(cap_w.max(1)))
+                .clamp(0.0, f64::from(spec.width));
+            let y = (y * f64::from(spec.height) / f64::from(cap_h.max(1)))
+                .clamp(0.0, f64::from(spec.height));
             (x, y)
         };
         let mut injector: Option<InputInjector> = None;

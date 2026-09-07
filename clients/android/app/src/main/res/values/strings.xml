@@ -33,7 +33,6 @@
     <string name="open_keyboard">Keyboard</string>
     <string name="close_keyboard">Hide</string>
     <string name="lock_screen">Lock Session</string>
-    <string name="blank_screen">Blank Screen</string>
     <string name="send_ctrl_alt_del">Ctrl+Alt+Del</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>

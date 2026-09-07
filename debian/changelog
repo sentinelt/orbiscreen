@@ -1,3 +1,17 @@
+orbiscreen (0.23.10-1~ubuntunoble1) noble; urgency=medium
+orbiscreen (0.24.0-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.23.10 for Ubuntu noble.
+  * Release 0.24.0 for Ubuntu noble.
+  * Harmonize UI/UX and Catppuccin Mocha colors between Web and Android clients.
+  * Remove Blank Display action from Web and Android interfaces.
+  * Update Web client logo to authentic Orbiscreen vector SVG and rename spinner to streamSpinner.
+  * Strengthen Web Content-Security-Policy (CSP) headers.
+  * Sanitize and clamp daemon input coordinates to prevent NaN/out-of-bounds events.
+  * Enforce clean comment standards and remove dead code across the workspace.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Mon, 07 Sep 2026 15:10:00 +0300
+
 orbiscreen (0.23.9-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.23.9 for Ubuntu noble.

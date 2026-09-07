@@ -34,7 +34,6 @@
     <string name="open_keyboard">لوحة المفاتيح</string>
     <string name="close_keyboard">إخفاء</string>
     <string name="lock_screen">قفل الجلسة</string>
-    <string name="blank_screen">تعتيم الشاشة</string>
     <string name="send_ctrl_alt_del">Ctrl+Alt+Del</string>
     <string name="theme_system">تلقائي</string>
     <string name="theme_light">فاتح</string>

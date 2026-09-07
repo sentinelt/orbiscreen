@@ -57,7 +57,6 @@ fun ControlToolbar(
     onToggleKeyboard: () -> Unit,
     onOpenSettings: () -> Unit,
     onLock: () -> Unit,
-    onBlank: () -> Unit,
     onHideControls: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,

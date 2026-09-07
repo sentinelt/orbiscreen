@@ -289,7 +289,6 @@ fun StreamScreen(
                 onToggleKeyboard = viewModel::toggleKeyboard,
                 onOpenSettings = { showSettingsSheet = true },
                 onLock = viewModel::lock,
-                onBlank = viewModel::blank,
                 onHideControls = {
                     showControls = false
                     isControlsPermanentlyHidden = true

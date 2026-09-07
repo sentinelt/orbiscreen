@@ -23,10 +23,7 @@ const I18N = {
         resolution: "Resolution",
         encoder: "Encoder",
         hostActions: "Host Actions",
-        actionBlank: "Blank Display",
         actionResync: "Resync",
-        actionTurnOn: "Display On",
-        actionTurnOff: "Display Off",
         statusConnecting: "Connecting",
         statusConnectingSub: "Connecting...",
         statusConnected: "Connected",
@@ -45,8 +42,6 @@ const I18N = {
         controlsHidden: "Toolbar hidden",
         toastLocked: "Locked",
         toastLockSent: "Lock sent",
-        toastBlanked: "Blanked",
-        toastUnblanked: "Active",
         toastCadSent: "Ctrl+Alt+Del sent",
         toastResynced: "Resynced",
         toastDisconnected: "Disconnected"
@@ -72,10 +67,7 @@ const I18N = {
         resolution: "الدقة",
         encoder: "المُرَمِّز",
         hostActions: "إجراءات المضيف",
-        actionBlank: "تعتيم",
         actionResync: "مزامنة",
-        actionTurnOn: "تشغيل الشاشة",
-        actionTurnOff: "تعتيم الشاشة",
         statusConnecting: "جارٍ الاتصال",
         statusConnectingSub: "جارٍ الاتصال...",
         statusConnected: "متصل",
@@ -94,8 +86,6 @@ const I18N = {
         controlsHidden: "تم إخفاء الشريط",
         toastLocked: "تم القفل",
         toastLockSent: "تم إرسال الأمر",
-        toastBlanked: "تم التعتيم",
-        toastUnblanked: "الشاشة نشطة",
         toastCadSent: "تم إرسال الإشارة",
         toastResynced: "تمت المزامنة",
         toastDisconnected: "تم قطع الاتصال"
@@ -202,7 +192,6 @@ const btnCloseSettings = document.getElementById("btnCloseSettings");
 const statLatency = document.getElementById("statLatency");
 const statRes = document.getElementById("statRes");
 const statEncoder = document.getElementById("statEncoder");
-const btnActionBlank = document.getElementById("btnActionBlank");
 const btnActionResync = document.getElementById("btnActionResync");
 
 const vncBanner = document.getElementById("vncBanner");
@@ -222,7 +211,6 @@ const MAX_RECONNECT_DELAY = 10000;
 let streamActive = false;
 let isVncFocused = false;
 let isTouchMode = true;
-let isDpmsOff = false;
 let toastTimer = null;
 let vncBannerTimer = null;
 let latencyWatchdog = null;
@@ -548,15 +536,6 @@ if (btnLock) {
     });
 }
 
-if (btnActionBlank) {
-    btnActionBlank.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        isDpmsOff = !isDpmsOff;
-        await sendHostAction(isDpmsOff ? "blank" : "unblank");
-        btnActionBlank.textContent = isDpmsOff ? t("actionTurnOn") : t("actionTurnOff");
-        showToast(isDpmsOff ? t("toastBlanked") : t("toastUnblanked"));
-    });
-}
 
 if (btnSendCad) {
     btnSendCad.addEventListener("click", async (e) => {

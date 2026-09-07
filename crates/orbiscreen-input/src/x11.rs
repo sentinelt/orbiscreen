@@ -190,7 +190,6 @@ impl UinputInjector {
                 let pressure = if pressed { PRESSURE_MAX } else { 0 };
 
                 let events = if button == 2 {
-                    // Middle click
                     vec![
                         AbsEvent::new(Abs::X, xi).into(),
                         AbsEvent::new(Abs::Y, yi).into(),
@@ -200,7 +199,6 @@ impl UinputInjector {
                         SynEvent::new(Syn::REPORT).into(),
                     ]
                 } else if button == 3 {
-                    // Right click
                     vec![
                         AbsEvent::new(Abs::X, xi).into(),
                         AbsEvent::new(Abs::Y, yi).into(),
@@ -210,7 +208,6 @@ impl UinputInjector {
                         SynEvent::new(Syn::REPORT).into(),
                     ]
                 } else {
-                    // Left click / drag
                     self.button_1_pressed = pressed;
                     vec![
                         AbsEvent::new(Abs::X, xi).into(),

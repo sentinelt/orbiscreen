@@ -31,7 +31,6 @@ data class StreamState(
     val encoder: String = "",
     val version: String = "",
     val keyboardVisible: Boolean = false,
-    val blanked: Boolean = false,
     val scaleMode: Int = 0,
     val resolutionLabel: String = "1920x1080",
 )
@@ -177,16 +176,6 @@ class StreamViewModel(
 
     fun toggleKeyboard() {
         _state.value = _state.value.copy(keyboardVisible = !_state.value.keyboardVisible)
-    }
-
-    fun blank() {
-        val target = !_state.value.blanked
-        _state.value = _state.value.copy(blanked = target)
-        ensureInput().control(if (target) "blank" else "unblank") { ok ->
-            if (!ok) {
-                _state.value = _state.value.copy(blanked = !target)
-            }
-        }
     }
 
     fun lock() {
