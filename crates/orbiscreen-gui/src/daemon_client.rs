@@ -71,10 +71,11 @@ impl DaemonClient {
         }
 
         let is_running = Self::check_process_running().await;
-        let mut status = DaemonStatus::default();
-        status.running = is_running;
-        status.local_ips = Self::detect_local_ips();
-        status
+        DaemonStatus {
+            running: is_running,
+            local_ips: Self::detect_local_ips(),
+            ..Default::default()
+        }
     }
 
     pub async fn start_service() -> Result<String, String> {
