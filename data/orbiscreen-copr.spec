@@ -5,7 +5,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.24.1
+Version:        0.25.0
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -52,6 +52,7 @@ cargo build --release --workspace --locked
 %install
 install -Dm0755 target/release/orbiscreen %{buildroot}%{_bindir}/orbiscreen
 install -Dm0644 data/orbiscreen.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/orbiscreen.svg
+install -Dm0644 data/orbiscreen.desktop %{buildroot}%{_datadir}/applications/orbiscreen.desktop
 install -Dm0755 scripts/install-evdi-module.sh %{buildroot}%{_datadir}/orbiscreen/install-evdi-module.sh
 install -Dm0644 data/99-orbiscreen-usb.rules %{buildroot}%{_udevrulesdir}/99-orbiscreen-usb.rules
 
@@ -91,6 +92,7 @@ fi
 %files
 %{_bindir}/orbiscreen
 %{_datadir}/icons/hicolor/scalable/apps/orbiscreen.svg
+%{_datadir}/applications/orbiscreen.desktop
 %{_userunitdir}/orbiscreen.service
 %{_datadir}/orbiscreen/client/index.html
 %{_datadir}/orbiscreen/client/style.css
@@ -103,6 +105,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Tue Sep 08 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.25.0-1
+- Release 0.25.0: Linux Desktop GUI Control Center (orbiscreen-gui) with System Tray, streamlined English interface, and orbiscreen gui CLI integration.
+
 * Mon Sep 07 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.24.1-1
 - Release 0.24.1: UDP Annex-B video transport with per-client DPLPMTUD, KWin dynamic virtual display with Direct Touch binding, and send-to-assemble delay metrics.
 

@@ -1,3 +1,12 @@
+orbiscreen (0.25.0-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.25.0 for Ubuntu noble.
+  * Linux Desktop GUI Control Center (orbiscreen-gui) with System Tray.
+  * Integration of 'orbiscreen gui' CLI command and desktop entry launcher.
+  * Streamlined English user interface across Web, Android, and Desktop.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Tue, 08 Sep 2026 12:30:00 +0300
+
 orbiscreen (0.24.1-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.24.1 for Ubuntu noble.

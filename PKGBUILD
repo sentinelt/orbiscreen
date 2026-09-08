@@ -6,7 +6,7 @@
 # Maintainer: shadow-x78 <107577376+shadow-x78@users.noreply.github.com>
 
 pkgname=orbiscreen
-pkgver=0.24.1
+pkgver=0.25.0
 pkgrel=1
 pkgdesc="Turn Android devices into high-performance secondary monitors for Linux (Wayland & X11)"
 arch=('x86_64')
@@ -48,6 +48,7 @@ package() {
 
     install -Dm0755 target/release/orbiscreen "${pkgdir}/usr/bin/orbiscreen"
     install -Dm0644 data/orbiscreen.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/orbiscreen.svg"
+    install -Dm0644 data/orbiscreen.desktop "${pkgdir}/usr/share/applications/orbiscreen.desktop"
     install -Dm0755 scripts/install-evdi-module.sh "${pkgdir}/usr/share/orbiscreen/install-evdi-module.sh"
     install -Dm0644 data/99-orbiscreen-usb.rules "${pkgdir}/usr/lib/udev/rules.d/99-orbiscreen-usb.rules"
 

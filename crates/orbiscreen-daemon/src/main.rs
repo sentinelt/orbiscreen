@@ -110,6 +110,8 @@ enum Command {
         #[command(subcommand)]
         action: ServiceAction,
     },
+    #[command(about = "Launch the desktop dashboard GUI control center")]
+    Gui,
     #[command(about = "Display version, developer, and system details")]
     Version {
         #[arg(long, help = "Output version details in raw JSON format")]
@@ -410,6 +412,31 @@ async fn main() -> ExitCode {
             }
         }
         Some(Command::Service { action }) => run_service_action(action).await,
+        Some(Command::Gui) => {
+            let exe_path = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("orbiscreen-gui")));
+            let target = if let Some(ref p) = exe_path {
+                if p.exists() {
+                    p.as_path()
+                } else {
+                    std::path::Path::new("orbiscreen-gui")
+                }
+            } else {
+                std::path::Path::new("orbiscreen-gui")
+            };
+            match std::process::Command::new(target).spawn() {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!(
+                        "Failed to launch Orbiscreen GUI ({}): {}",
+                        target.display(),
+                        e
+                    );
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some(Command::Version { json }) => {
             ui::print_version_card(json);
             ExitCode::SUCCESS

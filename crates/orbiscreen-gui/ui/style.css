@@ -1,0 +1,635 @@
+/* Orbiscreen - Desktop Dashboard Styles (GPL-3.0-or-later)
+   https://github.com/shadow-x78/orbiscreen */
+
+:root {
+    color-scheme: dark;
+    --bg: #11111b;
+    --surface: #1e1e2e;
+    --surface-alt: #181825;
+    --glass-dark: rgba(24, 24, 37, 0.88);
+    --glass-border: rgba(137, 180, 250, 0.22);
+    --primary: #89b4fa;
+    --primary-variant: rgba(137, 180, 250, 0.16);
+    --sapphire: #74c7ec;
+    --active-green: #a6e3a1;
+    --peach: #fab387;
+    --error-red: #f38ba8;
+    --text: #cdd6f4;
+    --subtext: #a6adc8;
+    --btn-glass: rgba(255, 255, 255, 0.10);
+    --btn-glass-hover: rgba(255, 255, 255, 0.18);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    user-select: none;
+}
+
+.appContainer {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+    width: 240px;
+    background: var(--surface-alt);
+    border-right: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 16px;
+    flex-shrink: 0;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+    padding-left: 4px;
+}
+
+.brandLogo {
+    width: 36px;
+    height: 36px;
+}
+
+.brandText {
+    display: flex;
+    flex-direction: column;
+}
+
+.brandTitle {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: -0.02em;
+}
+
+.brandSub {
+    font-size: 0.72rem;
+    color: var(--subtext);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.navMenu {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.navItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--subtext);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.navItem:hover {
+    background: var(--primary-variant);
+    color: var(--text);
+}
+
+.navItem.active {
+    background: var(--primary-variant);
+    border-color: var(--glass-border);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.navIcon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.sidebarFooter {
+    padding-top: 14px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.statusPill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--glass-dark);
+    padding: 8px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+}
+
+.statusDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #6c7086;
+    transition: all 0.2s ease;
+}
+
+.statusPill.online .statusDot {
+    background: var(--active-green);
+    box-shadow: 0 0 8px var(--active-green);
+}
+
+.statusPill.offline .statusDot {
+    background: var(--error-red);
+}
+
+.statusText {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* ── Main Content ── */
+.mainContent {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(circle at top right, rgba(116, 199, 236, 0.08), transparent 45%),
+                radial-gradient(circle at bottom left, rgba(137, 180, 250, 0.06), transparent 50%),
+                var(--bg);
+    overflow-y: auto;
+}
+
+.topBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--glass-border);
+    background: var(--glass-dark);
+    backdrop-filter: blur(12px);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.topBar h1 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+}
+
+.topActions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* ── Buttons ── */
+.btnPrimary {
+    background: linear-gradient(135deg, var(--primary), var(--sapphire));
+    color: #11111b;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.btnPrimary:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+}
+
+.btnPrimary.danger {
+    background: linear-gradient(135deg, var(--error-red), #e78284);
+    color: #11111b;
+}
+
+.btnSecondary {
+    background: var(--btn-glass);
+    color: var(--text);
+    border: 1px solid var(--glass-border);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.88rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.btnSecondary:hover {
+    background: var(--btn-glass-hover);
+}
+
+.btnSmall {
+    background: var(--primary-variant);
+    border: 1px solid var(--glass-border);
+    color: var(--primary);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.iconSmall {
+    width: 18px;
+    height: 18px;
+}
+
+/* ── Tab Content ── */
+.tabContent {
+    display: none;
+    padding: 24px 28px;
+}
+
+.tabContent.active {
+    display: block;
+}
+
+.gridCards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.gridCards.singleCol {
+    grid-template-columns: 1fr;
+    max-width: 800px;
+}
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 20px;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.card.fullWidth {
+    grid-column: 1 / -1;
+}
+
+.cardHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.cardHeader h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* ── Badges ── */
+.badge {
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.badgeSapphire {
+    background: rgba(116, 199, 236, 0.16);
+    color: var(--sapphire);
+    border: 1px solid rgba(116, 199, 236, 0.3);
+}
+
+.badgeGreen {
+    background: rgba(166, 227, 161, 0.16);
+    color: var(--active-green);
+    border: 1px solid rgba(166, 227, 161, 0.3);
+}
+
+.badgePrimary {
+    background: var(--primary-variant);
+    color: var(--primary);
+    border: 1px solid var(--glass-border);
+}
+
+/* ── Connection Body ── */
+.connectionBody {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.connectionInfo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.infoRow {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.infoRow .label {
+    font-size: 0.78rem;
+    color: var(--subtext);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.infoRow .value {
+    font-size: 0.95rem;
+    font-family: monospace;
+    color: var(--text);
+}
+
+.copyRow {
+    display: flex;
+    gap: 6px;
+}
+
+.copyRow input {
+    flex: 1;
+    background: var(--surface-alt);
+    border: 1px solid var(--glass-border);
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: var(--primary);
+    font-size: 0.85rem;
+    font-family: monospace;
+    outline: none;
+}
+
+.qrContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.qrBox {
+    background: #ffffff;
+    padding: 8px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qrHint {
+    font-size: 0.75rem;
+    color: var(--subtext);
+}
+
+/* ── Stats Grid ── */
+.statsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+}
+
+.statBox {
+    background: var(--surface-alt);
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.statNumber {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--primary);
+    font-family: monospace;
+}
+
+.statLabel {
+    font-size: 0.78rem;
+    color: var(--subtext);
+}
+
+/* ── Display Props ── */
+.displayProps {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.propItem {
+    display: flex;
+    gap: 8px;
+    font-size: 0.88rem;
+}
+
+.propKey {
+    color: var(--subtext);
+}
+
+.propVal {
+    color: var(--text);
+    font-weight: 500;
+}
+
+/* ── Forms & Chips ── */
+.formGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.formGroup label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--subtext);
+    text-transform: uppercase;
+}
+
+.chipGroup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.chip {
+    background: var(--surface-alt);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.chip:hover {
+    background: var(--primary-variant);
+}
+
+.chip.active {
+    background: var(--primary-variant);
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.checkboxGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.checkLabel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.checkLabel input[type="checkbox"] {
+    accent-color: var(--primary);
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+/* ── Doctor Results ── */
+.sectionDesc {
+    font-size: 0.85rem;
+    color: var(--subtext);
+    margin-bottom: 14px;
+}
+
+.doctorResults {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.doctorItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface-alt);
+    border: 1px solid var(--glass-border);
+    padding: 10px 14px;
+    border-radius: 8px;
+}
+
+.doctorStatus {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--active-green);
+    width: 24px;
+    text-align: center;
+}
+
+.doctorItem.warn .doctorStatus {
+    color: var(--peach);
+}
+
+.doctorItem.error .doctorStatus {
+    color: var(--error-red);
+}
+
+.doctorInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.doctorInfo strong {
+    font-size: 0.88rem;
+    color: var(--text);
+}
+
+.doctorInfo span {
+    font-size: 0.78rem;
+    color: var(--subtext);
+}
+
+.cardActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* ── About Tab ── */
+.aboutHeader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.aboutLogo {
+    width: 64px;
+    height: 64px;
+}
+
+.versionBadge {
+    font-size: 0.8rem;
+    color: var(--primary);
+    background: var(--primary-variant);
+    border: 1px solid var(--glass-border);
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-family: monospace;
+}
+
+.aboutDesc {
+    font-size: 0.9rem;
+    color: var(--subtext);
+    text-align: center;
+    max-width: 540px;
+    margin: 0 auto 20px;
+    line-height: 1.5;
+}
+
+.aboutLinks {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.linkBtn {
+    background: var(--surface-alt);
+    border: 1px solid var(--glass-border);
+    color: var(--primary);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.linkBtn:hover {
+    background: var(--primary-variant);
+}

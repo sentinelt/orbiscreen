@@ -45,63 +45,18 @@ const I18N = {
         toastCadSent: "Ctrl+Alt+Del sent",
         toastResynced: "Resynced",
         toastDisconnected: "Disconnected"
-    },
-    ar: {
-        btnInputMode: "نمط الإدخال",
-        btnKeyboard: "لوحة المفاتيح",
-        btnLock: "قفل الجلسة",
-        btnSettings: "الإعدادات",
-        btnHideControls: "إخفاء الشريط",
-        btnFullscreen: "ملء الشاشة",
-        btnDisconnect: "قطع الاتصال",
-        btnRestoreToolbar: "إظهار الشريط",
-        btnCloseKeyboard: "إغلاق",
-        settingsTitle: "الإعدادات",
-        language: "اللغة",
-        fitMode: "التحجيم",
-        fitContain: "ملاءمة",
-        fitCover: "ملء",
-        fitNone: "100%",
-        perfStats: "الإحصائيات",
-        latency: "الاستجابة",
-        resolution: "الدقة",
-        encoder: "المُرَمِّز",
-        hostActions: "إجراءات المضيف",
-        actionResync: "مزامنة",
-        statusConnecting: "جارٍ الاتصال",
-        statusConnectingSub: "جارٍ الاتصال...",
-        statusConnected: "متصل",
-        statusDisconnected: "غير متصل",
-        statusStreamError: "خطأ في البث",
-        statusStreamErrorSub: "جارٍ إعادة المحاولة...",
-        statusAuthFailed: "المصادقة مطلوبة",
-        statusAuthFailedSub: "أدخل رمز الجلسة",
-        tokenPlaceholder: "رمز الجلسة...",
-        btnConnect: "اتصال",
-        btnReconnect: "إعادة الاتصال",
-        vncActive: "التحكم نشط · اضغط <kbd>Esc</kbd> للتحرير",
-        cursorReleased: "تم التحرير",
-        modeTouch: "لمس",
-        modeTouchpad: "لوحة اللمس",
-        controlsHidden: "تم إخفاء الشريط",
-        toastLocked: "تم القفل",
-        toastLockSent: "تم إرسال الأمر",
-        toastCadSent: "تم إرسال الإشارة",
-        toastResynced: "تمت المزامنة",
-        toastDisconnected: "تم قطع الاتصال"
     }
 };
 
-let currentLang = localStorage.getItem("orbiscreen_lang") || (navigator.language && navigator.language.startsWith("ar") ? "ar" : "en");
+const currentLang = "en";
 
 function t(key) {
-    const dict = I18N[currentLang] || I18N.en;
-    return dict[key] || I18N.en[key] || key;
+    return I18N.en[key] || key;
 }
 
 function applyTranslations() {
-    document.documentElement.lang = currentLang;
-    document.documentElement.dir = currentLang === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = "en";
+    document.documentElement.dir = "ltr";
 
     document.querySelectorAll("[data-i18n]").forEach((el) => {
         const k = el.getAttribute("data-i18n");
@@ -119,18 +74,6 @@ function applyTranslations() {
         const k = el.getAttribute("data-i18n-html");
         if (k && t(k)) el.innerHTML = t(k);
     });
-
-    const btnEn = document.getElementById("btnLangEn");
-    const btnAr = document.getElementById("btnLangAr");
-    if (btnEn) btnEn.classList.toggle("active", currentLang === "en");
-    if (btnAr) btnAr.classList.toggle("active", currentLang === "ar");
-}
-
-function setLanguage(lang) {
-    if (!I18N[lang]) return;
-    currentLang = lang;
-    localStorage.setItem("orbiscreen_lang", lang);
-    applyTranslations();
 }
 
 const statusTitle = document.getElementById("statusTitle");
@@ -511,21 +454,6 @@ async function sendHostAction(action, extra = {}) {
         console.warn(`Host action ${action} failed:`, err);
         return false;
     }
-}
-
-const btnLangEn = document.getElementById("btnLangEn");
-const btnLangAr = document.getElementById("btnLangAr");
-if (btnLangEn) {
-    btnLangEn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        setLanguage("en");
-    });
-}
-if (btnLangAr) {
-    btnLangAr.addEventListener("click", (e) => {
-        e.stopPropagation();
-        setLanguage("ar");
-    });
 }
 
 if (btnLock) {

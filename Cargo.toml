@@ -13,11 +13,21 @@ members = [
     "crates/orbiscreen-input",
     "crates/orbiscreen-transport",
     "crates/orbiscreen-daemon",
+    "crates/orbiscreen-gui",
+]
+default-members = [
+    "crates/orbiscreen-core",
+    "crates/orbiscreen-display",
+    "crates/orbiscreen-capture",
+    "crates/orbiscreen-encode",
+    "crates/orbiscreen-input",
+    "crates/orbiscreen-transport",
+    "crates/orbiscreen-daemon",
 ]
 
 # ── Package Metadata ──
 [workspace.package]
-version = "0.24.1"
+version = "0.25.0"
 edition = "2021"
 rust-version = "1.75"
 license = "GPL-3.0-or-later"

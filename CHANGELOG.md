@@ -3,6 +3,31 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+## [v0.25.0] - 2026-09-08
+
+### 🖥 Linux Desktop GUI Control Center
+- **Desktop Application (`orbiscreen-gui`)**:
+  - Native Host Control Center and System Tray Dashboard built with Tauri v2 and WebKitGTK.
+  - Pixel-perfect Catppuccin Mocha glassmorphic UI matching the Web and Android clients.
+  - **Interactive Dashboard**: Real-time service status, Start/Stop/Restart daemon controls, connection parameters (Wi-Fi IP, HTTP port 54321, UDP port 54322), and visual QR code pairing canvas.
+  - **Live Stream Telemetry**: Real-time counters for active clients, connected USB (AOA) devices, forwarded frames, active video encoder, and capture backend.
+  - **Display & Stream Configuration**: Presets for virtual display resolutions (1080p, 1600p, 1800p), refresh rates (60Hz, 90Hz, 120Hz), hardware encoder selection, and input modes (Direct Touch, Stylus digitizer, pointer confinement).
+  - **Doctor Diagnostics**: Built-in system health checks for Linux compositor support, KWin D-Bus API, `/dev/uinput` permissions, network port availability, and udev rules, complete with one-click automatic fixes.
+  - **System Tray Integration**: Background tray icon with quick actions (Open Dashboard, Start Service, Stop Service, Quit) and minimize-to-tray window behavior.
+  - **Desktop Integration**: Standard XDG `orbiscreen.desktop` application launcher and `orbiscreen gui` CLI subcommand.
+
+### 🌐 Interface Streamlining
+- **Streamlined English Interface**:
+  - Unified clean English interface across Web, Android, and Desktop clients.
+  - Removed localized Arabic bundles from Android client and web client to reduce bundle size and simplify interface maintenance.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to 0.25.0 across all crates and configured `default-members` to maintain green CI on headless build environments.
+- **Android Client**: Incremented `versionCode` to 72; updated `versionName` to "0.25.0".
+- **COPR / RPM Spec** (`data/orbiscreen-copr.spec`): Updated to version 0.25.0 with desktop entry installation and `%changelog`.
+- **debian/changelog**: Added 0.25.0-1 release entry for Ubuntu noble.
+- **PKGBUILD**: Bumped `pkgver` to 0.25.0 and added desktop entry installation.
+
 ## [v0.24.1] - 2026-09-07
 
 ### ⚡ Performance & Low Latency
