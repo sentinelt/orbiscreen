@@ -22,6 +22,9 @@ BuildRequires:  pkgconfig(gstreamer-video-1.0)
 BuildRequires:  pkgconfig(libevdev)
 BuildRequires:  pkgconfig(xkbcommon)
 BuildRequires:  pkgconfig(dbus-1)
+BuildRequires:  pkgconfig(gtk+-3.0)
+BuildRequires:  pkgconfig(webkit2gtk-4.1)
+BuildRequires:  pkgconfig(ayatana-appindicator3-0.1)
 BuildRequires:  git-core
 
 Requires:       gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free
@@ -51,6 +54,9 @@ cargo build --release --workspace --locked
 
 %install
 install -Dm0755 target/release/orbiscreen %{buildroot}%{_bindir}/orbiscreen
+if [ -f target/release/orbiscreen-gui ]; then
+    install -Dm0755 target/release/orbiscreen-gui %{buildroot}%{_bindir}/orbiscreen-gui
+fi
 install -Dm0644 data/orbiscreen.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/orbiscreen.svg
 install -Dm0644 data/orbiscreen.desktop %{buildroot}%{_datadir}/applications/orbiscreen.desktop
 install -Dm0755 scripts/install-evdi-module.sh %{buildroot}%{_datadir}/orbiscreen/install-evdi-module.sh
@@ -91,6 +97,7 @@ fi
 
 %files
 %{_bindir}/orbiscreen
+%{_bindir}/orbiscreen-gui
 %{_datadir}/icons/hicolor/scalable/apps/orbiscreen.svg
 %{_datadir}/applications/orbiscreen.desktop
 %{_userunitdir}/orbiscreen.service

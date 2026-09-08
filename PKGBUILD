@@ -21,7 +21,7 @@ depends=(
     'libxkbcommon'
     'hicolor-icon-theme'
 )
-makedepends=('cargo' 'git' 'pkgconf' 'python')
+makedepends=('cargo' 'git' 'pkgconf' 'python' 'gtk3' 'webkit2gtk-4.1')
 optdepends=(
     'android-tools: USB transport via adb reverse'
     'evdi-dkms: kernel-level virtual display on X11/GNOME (not needed on KDE Plasma Wayland or wlroots)'
@@ -47,6 +47,9 @@ package() {
     cd "${pkgname}-${pkgver}"
 
     install -Dm0755 target/release/orbiscreen "${pkgdir}/usr/bin/orbiscreen"
+    if [ -f target/release/orbiscreen-gui ]; then
+        install -Dm0755 target/release/orbiscreen-gui "${pkgdir}/usr/bin/orbiscreen-gui"
+    fi
     install -Dm0644 data/orbiscreen.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/orbiscreen.svg"
     install -Dm0644 data/orbiscreen.desktop "${pkgdir}/usr/share/applications/orbiscreen.desktop"
     install -Dm0755 scripts/install-evdi-module.sh "${pkgdir}/usr/share/orbiscreen/install-evdi-module.sh"

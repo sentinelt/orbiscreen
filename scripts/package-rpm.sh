@@ -30,6 +30,9 @@ if [ ! -f target/release/orbiscreen ]; then
 fi
 
 cp -f target/release/orbiscreen "${BUILD_ROOT}/usr/bin/"
+if [ -f target/release/orbiscreen-gui ]; then
+    cp -f target/release/orbiscreen-gui "${BUILD_ROOT}/usr/bin/"
+fi
 
 # ── Build RPM Package ──
 if command -v rpmbuild >/dev/null 2>&1; then

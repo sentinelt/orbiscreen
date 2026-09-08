@@ -28,6 +28,9 @@ rm -rf "$APP"
 mkdir -p "$APP/usr/bin" "$APP/usr/share/orbiscreen/client/vendor" "$APP/usr/share/icons/hicolor/256x256/apps"
 
 install -m755 target/release/orbiscreen "$APP/usr/bin/orbiscreen"
+if [ -f target/release/orbiscreen-gui ]; then
+    install -m755 target/release/orbiscreen-gui "$APP/usr/bin/orbiscreen-gui"
+fi
 install -m644 clients/web/index.html "$APP/usr/share/orbiscreen/client/index.html"
 install -m644 clients/web/style.css  "$APP/usr/share/orbiscreen/client/style.css"
 install -m644 clients/web/app.js     "$APP/usr/share/orbiscreen/client/app.js"
