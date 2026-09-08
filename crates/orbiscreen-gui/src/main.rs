@@ -20,7 +20,6 @@ async fn main() {
         .init();
 
     tauri::Builder::default()
-        .plugin(tauri::plugin::Builder::default().build())
         .setup(|app| {
             let toggle = MenuItem::with_id(app, "toggle", "Open Dashboard", true, None::<&str>)?;
             let start = MenuItem::with_id(app, "start", "Start Service", true, None::<&str>)?;

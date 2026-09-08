@@ -4,7 +4,7 @@
   "version": "0.25.0",
   "identifier": "com.orbiscreen.gui",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "./ui"
   },
   "app": {
     "withGlobalTauri": true,

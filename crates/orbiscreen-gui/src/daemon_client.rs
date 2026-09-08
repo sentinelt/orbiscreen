@@ -60,7 +60,7 @@ impl DaemonClient {
             .await;
 
             if let Ok(proxy) = proxy_res {
-                if let Ok(json_str) = proxy.call::<(), String>("GetStatus", &()).await {
+                if let Ok(json_str) = proxy.call::<_, _, String>("GetStatus", &()).await {
                     if let Ok(mut status) = serde_json::from_str::<DaemonStatus>(&json_str) {
                         status.udp_port = status.signaling_port.saturating_add(1);
                         status.local_ips = Self::detect_local_ips();
@@ -109,7 +109,7 @@ impl DaemonClient {
             )
             .await
             {
-                if let Ok(reply) = proxy.call::<(), String>("Stop", &()).await {
+                if let Ok(reply) = proxy.call::<_, _, String>("Stop", &()).await {
                     return Ok(reply);
                 }
             }
