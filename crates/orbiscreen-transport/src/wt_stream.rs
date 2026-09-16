@@ -15,15 +15,15 @@ use tracing::{debug, info, warn};
 use wtransport::endpoint::IncomingSession;
 use wtransport::tls::{Certificate, CertificateChain, PrivateKey};
 use wtransport::Identity;
-use x509_parser::prelude::FromDer as _;
 use wtransport::RecvStream;
 use wtransport::SendStream;
 use wtransport::{Endpoint, ServerConfig as WtServerConfig};
+use x509_parser::prelude::FromDer as _;
 
 use super::annexb;
 use super::wt_protocol::{
-    decode_message, encode_hello_ack, encode_pong, fragment_video_datagrams, Message,
-    DEFAULT_DATAGRAM, MAX_FRAME,
+    advance_datagram_seq, decode_message, encode_hello_ack, encode_pong, fragment_video_datagrams,
+    video_carrier, Message, VideoCarrier, DEFAULT_DATAGRAM, MAX_FRAME,
 };
 use super::{token_eq, ClientGuard, DisplayCtl, H264Packet, Stats, IDR_DEBOUNCE};
 
@@ -65,12 +65,6 @@ fn host_now_ns() -> u64 {
 
 fn idr_due(last: Instant, now: Instant) -> bool {
     now.duration_since(last) >= IDR_DEBOUNCE
-}
-
-#[allow(missing_debug_implementations)]
-pub struct WtHub {
-    pub offer: WtOffer,
-    identity: Identity,
 }
 
 /// Regenerate before WebTransport's 14-day cap is actually hit.
@@ -146,6 +140,12 @@ fn store_identity(identity: &Identity, cert_path: &Path, key_path: &Path) -> Res
     write_secret_file(key_path, identity.private_key().to_secret_pem().as_bytes())
         .map_err(|e| format!("write key: {e}"))?;
     Ok(())
+}
+
+#[allow(missing_debug_implementations)]
+pub struct WtHub {
+    pub offer: WtOffer,
+    identity: Identity,
 }
 
 impl WtHub {
@@ -376,6 +376,7 @@ async fn handle_session(
 
     let mut wait_key = true;
     let mut seq: u16 = 0;
+    let mut cached_sps_pps: Option<super::annexb::SpsPps> = None;
     let mut max_datagram = connection
         .max_datagram_size()
         .unwrap_or(0)
@@ -426,48 +427,69 @@ async fn handle_session(
                 if !annexb::is_annexb(&pkt.bytes) {
                     continue;
                 }
-                if use_datagrams {
-                    if let Some(sz) = connection.max_datagram_size() {
-                        max_datagram = sz.clamp(256, DEFAULT_DATAGRAM);
+                let mut pkt = pkt;
+                if pkt.is_keyframe {
+                    let found = annexb::extract_sps_pps(&pkt.bytes);
+                    if !found.sps.is_empty() && !found.pps.is_empty() {
+                        cached_sps_pps = Some(found);
                     }
-                    let dgrams = fragment_video_datagrams(seq, &pkt, host_now_ns(), max_datagram);
-                    seq = seq.wrapping_add(1);
-                    let mut drop_rest = false;
-                    for dgram in dgrams {
-                        match connection.send_datagram(&dgram) {
-                            Ok(()) => {}
-                            Err(wtransport::error::SendDatagramError::TooLarge) => {
-                                max_datagram = max_datagram.saturating_sub(64).max(256);
-                                drop_rest = true;
+                    pkt.bytes = annexb::with_parameter_sets(&pkt.bytes, cached_sps_pps.as_ref());
+                }
+                match video_carrier(pkt.is_keyframe, use_datagrams) {
+                    VideoCarrier::Reliable => {
+                        let frame = match super::wt_protocol::encode_video(&pkt, host_now_ns()) {
+                            Ok(f) => f,
+                            Err(super::wt_protocol::CodecError::TooLarge(_)) => {
                                 wait_key = true;
                                 request_idr();
-                                break;
+                                continue;
                             }
-                            Err(wtransport::error::SendDatagramError::NotConnected) => {
-                                return Ok(());
-                            }
-                            Err(wtransport::error::SendDatagramError::UnsupportedByPeer) => {
-                                use_datagrams = false;
-                                drop_rest = true;
-                                break;
-                            }
-                        }
-                    }
-                    if drop_rest && use_datagrams {
-                        continue;
-                    }
-                    if !use_datagrams {
-                        let frame = super::wt_protocol::encode_video(&pkt, host_now_ns())
-                            .map_err(|e| format!("{e:?}"))?;
+                            Err(e) => return Err(format!("{e:?}")),
+                        };
                         if write_all(&mut send, &frame).await.is_err() {
                             return Ok(());
                         }
                     }
-                } else {
-                    let frame = super::wt_protocol::encode_video(&pkt, host_now_ns())
-                        .map_err(|e| format!("{e:?}"))?;
-                    if write_all(&mut send, &frame).await.is_err() {
-                        return Ok(());
+                    VideoCarrier::Datagram => {
+                        if let Some(sz) = connection.max_datagram_size() {
+                            max_datagram = sz.clamp(256, DEFAULT_DATAGRAM);
+                        }
+                        let dgrams =
+                            fragment_video_datagrams(seq, &pkt, host_now_ns(), max_datagram);
+                        if advance_datagram_seq(pkt.is_keyframe) {
+                            seq = seq.wrapping_add(1);
+                        }
+                        let mut drop_rest = false;
+                        for dgram in dgrams {
+                            match connection.send_datagram(&dgram) {
+                                Ok(()) => {}
+                                Err(wtransport::error::SendDatagramError::TooLarge) => {
+                                    max_datagram = max_datagram.saturating_sub(64).max(256);
+                                    drop_rest = true;
+                                    wait_key = true;
+                                    request_idr();
+                                    break;
+                                }
+                                Err(wtransport::error::SendDatagramError::NotConnected) => {
+                                    return Ok(());
+                                }
+                                Err(wtransport::error::SendDatagramError::UnsupportedByPeer) => {
+                                    use_datagrams = false;
+                                    drop_rest = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if drop_rest && use_datagrams {
+                            continue;
+                        }
+                        if !use_datagrams {
+                            let frame = super::wt_protocol::encode_video(&pkt, host_now_ns())
+                                .map_err(|e| format!("{e:?}"))?;
+                            if write_all(&mut send, &frame).await.is_err() {
+                                return Ok(());
+                            }
+                        }
                     }
                 }
             }
@@ -532,12 +554,77 @@ mod tests {
         assert!(hosts.iter().any(|h| h == "127.0.0.1"));
     }
 
+    fn temp_identity_paths() -> (std::path::PathBuf, std::path::PathBuf) {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("orbiscreen-wt-{}-{}", std::process::id(), nonce));
+        std::fs::create_dir_all(&dir).expect("temp identity dir");
+        (dir.join("wt-cert.pem"), dir.join("wt-key.pem"))
+    }
+
     #[test]
     fn self_signed_offer_has_sha256() {
-        let hub = WtHub::new(0).expect("identity");
+        let (cert, key) = temp_identity_paths();
+        let hub = WtHub::load_or_create(0, &cert, &key).expect("identity");
         let raw = B64.decode(&hub.offer.cert_sha256).expect("b64");
         assert_eq!(raw.len(), 32);
         assert_eq!(hub.offer.path, "/orbiscreen");
+        assert!(cert.is_file());
+        assert!(key.is_file());
+    }
+
+    #[test]
+    fn persisted_identity_reuses_sha256() {
+        let (cert, key) = temp_identity_paths();
+        let first = WtHub::load_or_create(0, &cert, &key).expect("first");
+        let second = WtHub::load_or_create(0, &cert, &key).expect("second");
+        assert_eq!(first.offer.cert_sha256, second.offer.cert_sha256);
+    }
+
+    #[test]
+    fn missing_key_regenerates_identity() {
+        let (cert, key) = temp_identity_paths();
+        let first = WtHub::load_or_create(0, &cert, &key).expect("first");
+        std::fs::remove_file(&key).expect("drop key");
+        let second = WtHub::load_or_create(0, &cert, &key).expect("second");
+        assert_ne!(first.offer.cert_sha256, second.offer.cert_sha256);
+    }
+
+    #[test]
+    fn expired_identity_is_replaced() {
+        let (cert, key) = temp_identity_paths();
+        let first = WtHub::load_or_create(0, &cert, &key).expect("first");
+        let expired = Identity::self_signed_builder()
+            .subject_alt_names(["localhost"])
+            .from_now_utc()
+            .validity_days(0)
+            .build()
+            .expect("expired");
+        store_identity(&expired, &cert, &key).expect("store expired");
+        assert!(!cert_usable(
+            CertificateDer::from_pem_slice(&std::fs::read(&cert).unwrap())
+                .unwrap()
+                .as_ref(),
+            CERT_RENEW_SLACK
+        ));
+        let second = WtHub::load_or_create(0, &cert, &key).expect("renewed");
+        assert_ne!(first.offer.cert_sha256, second.offer.cert_sha256);
+        assert!(cert_usable(
+            CertificateDer::from_pem_slice(&std::fs::read(&cert).unwrap())
+                .unwrap()
+                .as_ref(),
+            Duration::ZERO
+        ));
+    }
+
+    #[test]
+    fn freshly_generated_cert_is_usable() {
+        let identity = Identity::self_signed(["localhost"]).expect("identity");
+        let der = identity.certificate_chain().as_slice()[0].der();
+        assert!(cert_usable(der, CERT_RENEW_SLACK));
     }
 
     #[tokio::test]
@@ -551,7 +638,8 @@ mod tests {
         use wtransport::Endpoint;
 
         let port = 18790;
-        let hub = WtHub::new(port).expect("identity");
+        let (cert, key) = temp_identity_paths();
+        let hub = WtHub::load_or_create(port, &cert, &key).expect("identity");
         let mut digest = [0u8; 32];
         digest.copy_from_slice(&B64.decode(&hub.offer.cert_sha256).unwrap());
         let token = "wt-test-token".to_string();
@@ -613,12 +701,34 @@ mod tests {
         })
         .unwrap();
 
+        let key = loop {
+            let n = recv.read(&mut tmp).await.expect("read").expect("eof");
+            buf.extend_from_slice(&tmp[..n]);
+            if let Some((body, used)) = split_frame(&buf).unwrap() {
+                let msg = decode_message(body).unwrap();
+                buf.drain(..used);
+                break msg;
+            }
+        };
+        match key {
+            Message::Video(v) => {
+                assert!(v.is_keyframe);
+                assert_eq!(v.au, vec![0, 0, 0, 1, 0x65, 9]);
+            }
+            other => panic!("expected reliable IDR, got {other:?}"),
+        }
+
+        pump.send(H264Packet {
+            bytes: vec![0, 0, 0, 1, 0x41, 1],
+            is_keyframe: false,
+            pts_ns: 2,
+        })
+        .unwrap();
         let dgram = connection.receive_datagram().await.expect("datagram");
         let frag = crate::wt_protocol::parse_video_datagram(dgram.payload().as_ref())
             .expect("video datagram");
-        assert!(frag.is_keyframe);
-        assert_eq!(frag.frags, 1);
-        assert_eq!(frag.payload, vec![0, 0, 0, 1, 0x65, 9]);
+        assert!(!frag.is_keyframe);
+        assert_eq!(frag.payload, vec![0, 0, 0, 1, 0x41, 1]);
 
         let _ = shutdown_tx.send(true);
         let _ = server.await;

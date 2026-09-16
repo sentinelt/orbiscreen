@@ -8,7 +8,6 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.28.8
 Version:        0.28.9
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
@@ -73,7 +72,7 @@ install -Dm0644 data/orbiscreen.desktop %{buildroot}%{_datadir}/applications/orb
 install -Dm0755 scripts/install-evdi-module.sh %{buildroot}%{_datadir}/orbiscreen/install-evdi-module.sh
 install -Dm0644 data/99-orbiscreen-usb.rules %{buildroot}%{_udevrulesdir}/99-orbiscreen-usb.rules
 
-for f in index.html style.css app.js favicon.svg favicon.png apple-touch-icon.png; do
+for f in index.html style.css app.js annexb.js favicon.svg favicon.png apple-touch-icon.png; do
     install -Dm0644 "clients/web/$f" "%{buildroot}%{_datadir}/orbiscreen/client/$f"
 done
 install -Dm0644 clients/web/vendor/mpegts.js %{buildroot}%{_datadir}/orbiscreen/client/vendor/mpegts.js
@@ -135,6 +134,7 @@ fi
 %{_datadir}/orbiscreen/client/index.html
 %{_datadir}/orbiscreen/client/style.css
 %{_datadir}/orbiscreen/client/app.js
+%{_datadir}/orbiscreen/client/annexb.js
 %{_datadir}/orbiscreen/client/favicon.svg
 %{_datadir}/orbiscreen/client/favicon.png
 %{_datadir}/orbiscreen/client/apple-touch-icon.png

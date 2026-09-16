@@ -37,6 +37,9 @@ ignore = [
   "RUSTSEC-2025-0081",
   "RUSTSEC-2025-0098",
   "RUSTSEC-2025-0100",
+  # axum-server 0.7 still depends on rustls-pemfile; no maintained upgrade
+  # on that line. We parse PEM via rustls-pki-types in wt_stream.
+  "RUSTSEC-2025-0134",
 ]
 
 # ── Bans ──

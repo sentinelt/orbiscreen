@@ -36,6 +36,104 @@
         return out;
     }
 
+    function unescapeRbsp(nal) {
+        if (!nal || nal.length <= 1) return new Uint8Array(0);
+        const out = [];
+        let i = 1;
+        while (i < nal.length) {
+            if (i + 2 < nal.length && nal[i] === 0 && nal[i + 1] === 0 && nal[i + 2] === 3) {
+                out.push(0, 0);
+                i += 3;
+            } else {
+                out.push(nal[i]);
+                i += 1;
+            }
+        }
+        return Uint8Array.from(out);
+    }
+
+    function readUe(data) {
+        let bitPos = 0;
+        function bit() {
+            const byteIx = (bitPos / 8) | 0;
+            if (byteIx >= data.length) return -1;
+            const v = (data[byteIx] >> (7 - (bitPos % 8))) & 1;
+            bitPos += 1;
+            return v;
+        }
+        function ue() {
+            let zeros = 0;
+            while (true) {
+                const b = bit();
+                if (b < 0) return -1;
+                if (b === 1) break;
+                zeros += 1;
+                if (zeros > 31) return -1;
+            }
+            let suffix = 0;
+            for (let i = 0; i < zeros; i += 1) {
+                const b = bit();
+                if (b < 0) return -1;
+                suffix = (suffix << 1) | b;
+            }
+            return (1 << zeros) - 1 + suffix;
+        }
+        return { ue };
+    }
+
+    function sliceKind(nal) {
+        if (!nal || !nal.length) return "other";
+        const typ = nal[0] & 0x1f;
+        if (typ === 5) return "I";
+        if (typ !== 1 && typ !== 2) return "other";
+        const rbsp = unescapeRbsp(nal);
+        if (!rbsp.length) return "other";
+        const bits = readUe(rbsp);
+        if (bits.ue() < 0) return "other";
+        const sliceType = bits.ue();
+        if (sliceType < 0) return "other";
+        switch (sliceType % 5) {
+            case 0:
+            case 3:
+                return "P";
+            case 1:
+                return "B";
+            case 2:
+            case 4:
+                return "I";
+            default:
+                return "other";
+        }
+    }
+
+    function classifyAccessUnit(au) {
+        let sawI = false;
+        let sawB = false;
+        let sawP = false;
+        let i = 0;
+        while (i < au.length) {
+            const sc = startCodeLen(au, i);
+            if (!sc) break;
+            const nalStart = i + sc;
+            let next = nalStart;
+            while (next < au.length) {
+                if (startCodeLen(au, next) && next > nalStart) break;
+                next += 1;
+            }
+            if (nalStart < next) {
+                const kind = sliceKind(au.subarray(nalStart, next));
+                if (kind === "I") sawI = true;
+                else if (kind === "B") sawB = true;
+                else if (kind === "P") sawP = true;
+            }
+            i = next;
+        }
+        if (sawI) return "I";
+        if (sawB) return "B";
+        if (sawP) return "P";
+        return "other";
+    }
+
     function extractSpsPps(au) {
         let sps = null;
         let pps = null;
@@ -316,14 +414,186 @@
         return (cur - prev) & 0xffff;
     }
 
+    const HOLE_WAIT_MS = 48;
+    const MAX_HELD = 4;
+
+    function parityCount(k) {
+        if (k <= 3) return 0;
+        if (k <= 16) return 2;
+        if (k <= 64) return 3;
+        return 4;
+    }
+
+    const GF = (() => {
+        const exp = new Uint8Array(512);
+        const log = new Uint8Array(256);
+        let x = 1;
+        for (let i = 0; i < 255; i += 1) {
+            exp[i] = x;
+            log[x] = i;
+            x <<= 1;
+            if (x & 0x100) x ^= 0x11d;
+        }
+        for (let i = 255; i < 512; i += 1) exp[i] = exp[i - 255];
+        return { exp, log };
+    })();
+
+    function gfMul(a, b) {
+        if (a === 0 || b === 0) return 0;
+        return GF.exp[GF.log[a] + GF.log[b]];
+    }
+    function gfInv(a) {
+        return GF.exp[255 - GF.log[a]];
+    }
+    function cauchy(p, d, m) {
+        return gfInv(p ^ (m + d));
+    }
+
+    function invertMatrix(a) {
+        const n = a.length;
+        const m = a.map((row, i) => {
+            const r = new Uint8Array(n * 2);
+            r.set(row, 0);
+            r[n + i] = 1;
+            return r;
+        });
+        for (let col = 0; col < n; col += 1) {
+            let piv = col;
+            while (piv < n && m[piv][col] === 0) piv += 1;
+            if (piv === n) return null;
+            const tmp = m[col];
+            m[col] = m[piv];
+            m[piv] = tmp;
+            const inv = gfInv(m[col][col]);
+            for (let j = 0; j < n * 2; j += 1) m[col][j] = gfMul(m[col][j], inv);
+            for (let row = 0; row < n; row += 1) {
+                if (row === col) continue;
+                const f = m[row][col];
+                if (f === 0) continue;
+                for (let j = 0; j < n * 2; j += 1) {
+                    m[row][j] ^= gfMul(f, m[col][j]);
+                }
+            }
+        }
+        return m.map((row) => row.subarray(n));
+    }
+
+    function recoverFec(data, parity) {
+        const k = data.length;
+        if (data.every((d) => d)) return true;
+        const m = parity.length;
+        if (!m) return false;
+        const missing = [];
+        for (let i = 0; i < k; i += 1) if (!data[i]) missing.push(i);
+        const presentP = [];
+        let width = 0;
+        for (let i = 0; i < k; i += 1) if (data[i] && data[i].length > width) width = data[i].length;
+        for (let i = 0; i < m; i += 1) {
+            if (parity[i]) {
+                presentP.push(i);
+                if (parity[i].length > width) width = parity[i].length;
+            }
+        }
+        if (!width || missing.length > presentP.length) return false;
+        const usedP = presentP.slice(0, missing.length);
+        const missN = missing.length;
+        const known = data.map((d) => {
+            if (!d) return null;
+            const p = new Uint8Array(width);
+            p.set(d);
+            return p;
+        });
+        const rhs = usedP.map((p) => {
+            const rec = new Uint8Array(width);
+            rec.set(parity[p]);
+            const row = new Uint8Array(width);
+            for (let b = 0; b < width; b += 1) {
+                let s = rec[b];
+                for (let d = 0; d < k; d += 1) {
+                    if (known[d]) s ^= gfMul(cauchy(p, d, m), known[d][b]);
+                }
+                row[b] = s;
+            }
+            return row;
+        });
+        const mat = usedP.map((p) => {
+            const row = new Uint8Array(missN);
+            for (let c = 0; c < missN; c += 1) row[c] = cauchy(p, missing[c], m);
+            return row;
+        });
+        const inv = invertMatrix(mat);
+        if (!inv) return false;
+        for (let c = 0; c < missN; c += 1) {
+            const out = new Uint8Array(width);
+            for (let b = 0; b < width; b += 1) {
+                let s = 0;
+                for (let r = 0; r < missN; r += 1) s ^= gfMul(inv[c][r], rhs[r][b]);
+                out[b] = s;
+            }
+            data[missing[c]] = out;
+        }
+        return true;
+    }
+
+    function encodeFec(data, m) {
+        const k = data.length;
+        const width = data[0].length;
+        const parity = Array.from({ length: m }, () => new Uint8Array(width));
+        for (let p = 0; p < m; p += 1) {
+            for (let b = 0; b < width; b += 1) {
+                let s = 0;
+                for (let d = 0; d < k; d += 1) s ^= gfMul(cauchy(p, d, m), data[d][b]);
+                parity[p][b] = s;
+            }
+        }
+        return parity;
+    }
+
+    function concatFecAu(parts) {
+        let n = 0;
+        for (const p of parts) n += p.length;
+        const blob = new Uint8Array(n);
+        let o = 0;
+        for (const p of parts) {
+            blob.set(p, o);
+            o += p.length;
+        }
+        if (blob.length < 4) return null;
+        const len = (blob[0] | (blob[1] << 8) | (blob[2] << 16) | (blob[3] << 24)) >>> 0;
+        if (len > blob.length - 4) return null;
+        return blob.subarray(4, 4 + len);
+    }
+
+    function videoFromSlots(seq, slots) {
+        return {
+            type: "video",
+            seq,
+            key: slots.key,
+            ptsNs: slots.ptsNs,
+            sentNs: slots.sentNs,
+            au: concatBytes(slots.parts),
+        };
+    }
+
     class DatagramAssembler {
         constructor() {
             this.pending = new Map();
+            this.held = new Map();
             this.lastSeq = -1;
+            this.holeSince = 0;
         }
-        push(buf) {
+        push(buf, now) {
+            const t = now == null ? Date.now() : now;
             const frag = parseVideoDatagram(buf);
-            if (!frag || frag.frags <= 0 || frag.frag >= frag.frags) return null;
+            const m = frag ? parityCount(frag.frags) : 0;
+            if (!frag || frag.frags <= 0 || frag.frag >= frag.frags + m) {
+                return this.expire(t);
+            }
+            if (this.lastSeq >= 0) {
+                const age = seqDelta(frag.seq, this.lastSeq);
+                if (age === 0 || age > 32768) return this.expire(t);
+            }
+            if (this.held.has(frag.seq)) return this.expire(t);
             if (this.pending.size >= 4) {
                 for (const [seq] of this.pending) {
                     if (seqDelta(frag.seq, seq) > 1 && seqDelta(frag.seq, seq) < 32768) {
@@ -332,31 +602,108 @@
                 }
             }
             let slots = this.pending.get(frag.seq);
+            const isParity = frag.frag >= frag.frags;
             if (!slots || slots.frags !== frag.frags) {
+                if (isParity) return this.expire(t);
                 slots = {
                     frags: frag.frags,
                     key: frag.key,
                     ptsNs: frag.ptsNs,
                     sentNs: frag.sentNs,
                     parts: Array.from({ length: frag.frags }, () => null),
+                    parity: Array.from({ length: m }, () => null),
                 };
                 this.pending.set(frag.seq, slots);
             }
-            slots.parts[frag.frag] = frag.payload;
-            if (slots.parts.some((p) => p == null)) return null;
-            this.pending.delete(frag.seq);
-            const gap = this.lastSeq >= 0 && seqDelta(frag.seq, this.lastSeq) !== 1;
-            this.lastSeq = frag.seq;
-            if (gap && !slots.key) {
-                return { type: "gap" };
+            if (isParity) slots.parity[frag.frag - frag.frags] = frag.payload;
+            else slots.parts[frag.frag] = frag.payload;
+            const haveData = slots.parts.every((p) => p != null);
+            const have = slots.parts.filter((p) => p != null).length
+                + slots.parity.filter((p) => p != null).length;
+            if (!haveData && have < frag.frags) return this.expire(t);
+            if (!haveData) {
+                const data = slots.parts.slice();
+                if (!recoverFec(data, slots.parity)) return this.expire(t);
+                slots.parts = data;
             }
-            return {
+            this.pending.delete(frag.seq);
+            const au = m > 0 ? concatFecAu(slots.parts) : concatBytes(slots.parts);
+            if (!au) return this.expire(t);
+            slots.parts = [au];
+            const expired = this.expire(t);
+            return expired.concat(this.accept({
                 type: "video",
+                seq: frag.seq,
                 key: slots.key,
                 ptsNs: slots.ptsNs,
                 sentNs: slots.sentNs,
-                au: concatBytes(slots.parts),
-            };
+                au,
+            }, t));
+        }
+        accept(frame, now) {
+            const out = [];
+            if (this.lastSeq >= 0) {
+                const age = seqDelta(frame.seq, this.lastSeq);
+                if (age === 0 || age > 32768) return out;
+            }
+            if (this.lastSeq < 0) {
+                this.lastSeq = frame.seq;
+                out.push(frame);
+                return out;
+            }
+            const delta = seqDelta(frame.seq, this.lastSeq);
+            if (delta === 1) {
+                this.lastSeq = frame.seq;
+                out.push(frame);
+                this.drainHeld(out);
+                return out;
+            }
+            if (frame.key) {
+                this.held.clear();
+                this.holeSince = 0;
+                this.lastSeq = frame.seq;
+                out.push(frame);
+                return out;
+            }
+            this.held.set(frame.seq, frame);
+            if (!this.holeSince) this.holeSince = now;
+            this.trimHeld();
+            return out;
+        }
+        drainHeld(out) {
+            for (;;) {
+                const next = (this.lastSeq + 1) & 0xffff;
+                const frame = this.held.get(next);
+                if (!frame) break;
+                this.held.delete(next);
+                this.lastSeq = next;
+                out.push(frame);
+            }
+            if (this.held.size === 0) this.holeSince = 0;
+        }
+        trimHeld() {
+            if (this.held.size <= MAX_HELD) return;
+            const seqs = Array.from(this.held.keys()).sort(
+                (a, b) => seqDelta(a, this.lastSeq) - seqDelta(b, this.lastSeq),
+            );
+            for (const seq of seqs.slice(MAX_HELD)) this.held.delete(seq);
+        }
+        expire(now) {
+            const t = now == null ? Date.now() : now;
+            if (this.held.size === 0) return [];
+            if (t - this.holeSince < HOLE_WAIT_MS) return [];
+            const dropped = Math.max(1, this.held.size);
+            this.held.clear();
+            this.holeSince = 0;
+            return [{ type: "gap", dropped }];
+        }
+        // Reliable IDR has no datagram seq. Drop held P-frames from the
+        // old GOP and accept the next P as the start of the new one.
+        onReliableKeyframe() {
+            this.pending.clear();
+            this.held.clear();
+            this.holeSince = 0;
+            this.lastSeq = -1;
         }
     }
 
@@ -382,8 +729,10 @@
         TYPE_VIDEO, TYPE_HELLO, TYPE_HELLO_ACK, TYPE_PING, TYPE_PONG, TYPE_IDR, TYPE_BYE,
         MAX_FRAME,
         startCodeLen, extractSpsPps, codecStringFromSps, spsDimensions, withStartCode,
+        unescapeRbsp, classifyAccessUnit, sliceKind,
         encodeFrame, splitFrame, encodeHello, encodeCtrl, encodePing, decodeMessage,
         hashFromBase64, pickWtHost, FrameReader,
         parseVideoDatagram, encodeVideoDatagram, DatagramAssembler, seqDelta, DATAGRAM_HEADER,
+        HOLE_WAIT_MS, parityCount, recoverFec, concatFecAu, encodeFec,
     };
 }));

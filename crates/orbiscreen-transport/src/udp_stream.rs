@@ -440,13 +440,13 @@ pub fn fragment_video(
     if pkt.bytes.is_empty() {
         return Vec::new();
     }
-    let chunk = max_payload.max(1);
-    let chunks: Vec<&[u8]> = pkt.bytes.chunks(chunk).collect();
-    let frags = chunks.len() as u16;
-    chunks
-        .into_iter()
+    let shards = super::fec::shard_au(&pkt.bytes, max_payload.max(1));
+    let frags = shards.data.len() as u16;
+    let mut out: Vec<Vec<u8>> = shards
+        .data
+        .iter()
         .enumerate()
-        .map(|(i, chunk)| {
+        .map(|(i, part)| {
             encode_video(
                 seq,
                 i as u16,
@@ -454,10 +454,22 @@ pub fn fragment_video(
                 pkt.is_keyframe,
                 pkt.pts_ns,
                 sent_ns,
-                chunk,
+                part,
             )
         })
-        .collect()
+        .collect();
+    for (i, par) in shards.parity.iter().enumerate() {
+        out.push(encode_video(
+            seq,
+            frags + i as u16,
+            frags,
+            pkt.is_keyframe,
+            pkt.pts_ns,
+            sent_ns,
+            par,
+        ));
+    }
+    out
 }
 
 struct UdpClient {
@@ -504,6 +516,69 @@ enum SendOutcome {
     Sent,
     TooBig,
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct AuSendResult {
+    attempted: usize,
+    sent: usize,
+    failed: usize,
+    too_big: bool,
+}
+
+impl AuSendResult {
+    fn request_idr(self) -> bool {
+        self.failed > 0 || self.too_big
+    }
+}
+
+/// Record one fragment send. Returns whether later fragments of this AU should still go out.
+fn note_send(out: &mut AuSendResult, outcome: SendOutcome) -> bool {
+    out.attempted += 1;
+    match outcome {
+        SendOutcome::Sent => {
+            out.sent += 1;
+            true
+        }
+        SendOutcome::Failed => {
+            out.failed += 1;
+            true
+        }
+        SendOutcome::TooBig => {
+            out.too_big = true;
+            false
+        }
+    }
+}
+
+/// Walk an AU's fragments. `Failed` keeps going; only `TooBig` stops the rest.
+#[cfg(test)]
+fn dispatch_au_sends<F>(n: usize, mut send: F) -> AuSendResult
+where
+    F: FnMut(usize) -> SendOutcome,
+{
+    let mut out = AuSendResult::default();
+    for i in 0..n {
+        if !note_send(&mut out, send(i)) {
+            break;
+        }
+    }
+    out
+}
+
+async fn send_au_fragments(
+    sock: &UdpSocket,
+    frames: &[Vec<u8>],
+    addr: SocketAddr,
+    limits: UdpLimits,
+) -> AuSendResult {
+    let mut out = AuSendResult::default();
+    for frame in frames {
+        if !note_send(&mut out, send_datagram(sock, frame, addr, limits).await) {
+            break;
+        }
+    }
+    out
 }
 
 fn is_msg_too_big(err: &std::io::Error) -> bool {
@@ -820,14 +895,18 @@ pub async fn run_udp_hub(
                 if targets.is_empty() {
                     continue;
                 }
+                if super::wt_protocol::video_carrier(pkt.is_keyframe, true)
+                    == super::wt_protocol::VideoCarrier::Reliable
+                {
+                    continue;
+                }
                 seq = seq.wrapping_add(1);
                 let sent_ns = now_unix_ns();
                 for (addr, payload) in targets {
                     let frames = fragment_video(seq, &pkt, sent_ns, payload);
-                    for frame in &frames {
-                        if send_datagram(&sock, frame, addr, limits).await != SendOutcome::Sent {
-                            break;
-                        }
+                    let result = send_au_fragments(&sock, &frames, addr, limits).await;
+                    if result.request_idr() {
+                        request_idr_sender(idr_tx.as_ref());
                     }
                 }
             }
@@ -846,13 +925,17 @@ struct IncomingCtx<'a> {
     displays: Option<&'a super::DisplayCtl>,
 }
 
-async fn forward_udp_video(
+struct UdpForward {
     sock: std::sync::Arc<UdpSocket>,
     addr: SocketAddr,
-    mut video_rx: broadcast::Receiver<H264Packet>,
     payload: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     limits: UdpLimits,
-) {
+    displays: Option<super::DisplayCtl>,
+    session: Option<String>,
+    idr_tx: Option<tokio::sync::mpsc::Sender<()>>,
+}
+
+async fn forward_udp_video(fwd: UdpForward, mut video_rx: broadcast::Receiver<H264Packet>) {
     let mut seq: u16 = 0;
     loop {
         let pkt = match video_rx.recv().await {
@@ -860,16 +943,25 @@ async fn forward_udp_video(
             Err(broadcast::error::RecvError::Lagged(_)) => continue,
             Err(broadcast::error::RecvError::Closed) => break,
         };
-        let chunk = payload.load(std::sync::atomic::Ordering::Relaxed);
+        let chunk = fwd.payload.load(std::sync::atomic::Ordering::Relaxed);
         if chunk == 0 {
+            continue;
+        }
+        if super::wt_protocol::video_carrier(pkt.is_keyframe, true)
+            == super::wt_protocol::VideoCarrier::Reliable
+        {
             continue;
         }
         seq = seq.wrapping_add(1);
         let frames = fragment_video(seq, &pkt, now_unix_ns(), chunk);
-        for frame in &frames {
-            if send_datagram(&sock, frame, addr, limits).await != SendOutcome::Sent {
-                break;
-            }
+        let result = send_au_fragments(&fwd.sock, &frames, fwd.addr, fwd.limits).await;
+        if result.request_idr() {
+            request_client_idr(
+                fwd.displays.as_ref(),
+                fwd.session.as_deref(),
+                fwd.idr_tx.as_ref(),
+            )
+            .await;
         }
     }
 }
@@ -902,11 +994,17 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                     match ctl.attach(session.clone()).await {
                         Ok(att) => {
                             client.session = Some(att.info.id.clone());
-                            let sock = ctx.sock.clone();
-                            let payload = client.payload.clone();
-                            let limits = ctx.limits;
+                            let fwd = UdpForward {
+                                sock: ctx.sock.clone(),
+                                addr,
+                                payload: client.payload.clone(),
+                                limits: ctx.limits,
+                                displays: ctx.displays.cloned(),
+                                session: client.session.clone(),
+                                idr_tx: ctx.idr_tx.cloned(),
+                            };
                             client.video_task = Some(tokio::spawn(async move {
-                                forward_udp_video(sock, addr, att.video, payload, limits).await;
+                                forward_udp_video(fwd, att.video).await;
                             }));
                         }
                         Err(e) => warn!(%addr, "UDP attach failed: {e}"),
@@ -1188,6 +1286,59 @@ mod tests {
         for _ in 0..200 {
             assert!(!should_lose(0));
         }
+    }
+
+    #[test]
+    fn failed_datagram_still_sends_remaining_fragments() {
+        let script = [
+            SendOutcome::Sent,
+            SendOutcome::Failed,
+            SendOutcome::Sent,
+            SendOutcome::Sent,
+        ];
+        let result = dispatch_au_sends(script.len(), |i| script[i]);
+        assert_eq!(result.attempted, 4);
+        assert_eq!(result.sent, 3);
+        assert_eq!(result.failed, 1);
+        assert!(!result.too_big);
+        assert!(result.request_idr());
+    }
+
+    #[test]
+    fn too_big_stops_remaining_fragments() {
+        let script = [SendOutcome::Sent, SendOutcome::TooBig, SendOutcome::Sent];
+        let result = dispatch_au_sends(script.len(), |i| script[i]);
+        assert_eq!(result.attempted, 2);
+        assert_eq!(result.sent, 1);
+        assert_eq!(result.failed, 0);
+        assert!(result.too_big);
+        assert!(result.request_idr());
+    }
+
+    #[test]
+    fn one_lost_fragment_does_not_drop_a_twenty_fragment_au() {
+        let n = 20;
+        let lost = 3;
+        let result = dispatch_au_sends(n, |i| {
+            if i == lost {
+                SendOutcome::Failed
+            } else {
+                SendOutcome::Sent
+            }
+        });
+        assert_eq!(result.attempted, n);
+        assert_eq!(result.sent, n - 1);
+        assert_eq!(result.failed, 1);
+        assert!(result.request_idr());
+    }
+
+    #[test]
+    fn intact_au_does_not_request_idr() {
+        let result = dispatch_au_sends(8, |_| SendOutcome::Sent);
+        assert_eq!(result.attempted, 8);
+        assert_eq!(result.sent, 8);
+        assert_eq!(result.failed, 0);
+        assert!(!result.request_idr());
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub mod adb;
 pub mod annexb;
 pub mod aoa;
 pub mod display;
+pub mod fec;
 pub mod mdns;
 pub mod udp_stream;
 pub mod wt_protocol;
@@ -476,6 +477,7 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/stream", get(stream_handler).head(stream_head_handler))
         .route("/au", get(au_handler))
+        .route("/idr", get(idr_handler))
         .route("/input", post(input_post))
         .route("/api/control", post(api_control))
         .route(
@@ -683,6 +685,7 @@ async fn api_info(State(state): State<AppState>) -> impl IntoResponse {
         "cert_sha256": state.wt_offer.as_ref().map(|o| o.cert_sha256.clone()),
         "wt_hosts": state.wt_offer.as_ref().map(|o| o.hosts.clone()),
         "transport": ["http-mpegts", "udp-annexb", "webtransport-annexb"],
+        "idr_path": "/idr",
     });
     Json(envelope)
 }
@@ -1110,6 +1113,21 @@ async fn au_handler(
     State(state): State<AppState>,
     request: axum::extract::Request,
 ) -> axum::response::Response {
+    annexb_byte_stream(state, request, false).await
+}
+
+async fn idr_handler(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+) -> axum::response::Response {
+    annexb_byte_stream(state, request, true).await
+}
+
+async fn annexb_byte_stream(
+    state: AppState,
+    request: axum::extract::Request,
+    keys_only: bool,
+) -> axum::response::Response {
     use tokio_stream::StreamExt;
     if state.stats.active_clients() >= MAX_STREAM_CLIENTS {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -1169,6 +1187,7 @@ async fn au_handler(
             }
         };
         request_idr();
+        let mut cached_sps_pps: Option<annexb::SpsPps> = None;
         loop {
             if tx.is_closed() {
                 break;
@@ -1182,12 +1201,23 @@ async fn au_handler(
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
+            if keys_only && !pkt.is_keyframe {
+                continue;
+            }
             if wait_key {
                 if !pkt.is_keyframe {
                     request_idr();
                     continue;
                 }
                 wait_key = false;
+            }
+            let mut pkt = pkt;
+            if pkt.is_keyframe {
+                let found = annexb::extract_sps_pps(&pkt.bytes);
+                if !found.sps.is_empty() && !found.pps.is_empty() {
+                    cached_sps_pps = Some(found);
+                }
+                pkt.bytes = annexb::with_parameter_sets(&pkt.bytes, cached_sps_pps.as_ref());
             }
             let Ok(frame) = wt_protocol::encode_video(&pkt, {
                 std::time::SystemTime::now()
@@ -1251,7 +1281,6 @@ fn build_video_pipeline() -> Result<
         .ok_or(())?;
     Ok((pipeline, appsrc, appsink))
 }
-
 
 async fn stream_handler(
     State(state): State<AppState>,
@@ -1518,6 +1547,8 @@ mod tests {
         assert!(!should_redirect_browser_to_https("/client/config.json"));
         assert!(!should_redirect_browser_to_https("/api/info"));
         assert!(!should_redirect_browser_to_https("/stream"));
+        assert!(!should_redirect_browser_to_https("/idr"));
+        assert!(!should_redirect_browser_to_https("/au"));
     }
 
     #[test]
@@ -1579,18 +1610,28 @@ mod tests {
         assert!(idr_due(t0, t0 + Duration::from_millis(250)));
     }
 
+    fn run_node(args: &[&str]) -> Option<std::process::Output> {
+        match std::process::Command::new("node").args(args).output() {
+            Ok(output) => Some(output),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => panic!("node: {e}"),
+        }
+    }
+
     #[test]
     fn js_hello_frame_decodes_in_rust() {
         let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let script = manifest.join("../../clients/web/annexb.js");
-        let output = std::process::Command::new("node")
-            .arg("-e")
-            .arg(format!(
+        let Some(output) = run_node(&[
+            "-e",
+            &format!(
                 "const a=require({}); process.stdout.write(Buffer.from(a.encodeHello('tok','sess')));",
                 serde_json::to_string(&script.to_string_lossy()).unwrap()
-            ))
-            .output()
-            .expect("node encodeHello");
+            ),
+        ]) else {
+            eprintln!("skipping js_hello_frame_decodes_in_rust: node not installed");
+            return;
+        };
         assert!(
             output.status.success(),
             "{}",
@@ -1612,16 +1653,16 @@ mod tests {
     #[test]
     fn annexb_js_unit_tests() {
         let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let root = manifest.join("../..");
-        for script in ["clients/web/annexb.test.js"] {
-            let status = std::process::Command::new("node")
-                .arg("--test")
-                .arg(script)
-                .current_dir(&root)
-                .status()
-                .expect("node --test");
-            assert!(status.success(), "{script} failed");
-        }
+        let script = manifest.join("../../clients/web/annexb.test.js");
+        let Some(output) = run_node(&["--test", script.to_str().expect("utf-8 path")]) else {
+            eprintln!("skipping annexb_js_unit_tests: node not installed");
+            return;
+        };
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]

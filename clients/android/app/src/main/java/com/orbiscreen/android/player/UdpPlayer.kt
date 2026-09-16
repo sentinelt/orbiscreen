@@ -19,12 +19,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 private const val TAG = "Orbi.Udp"
@@ -43,7 +46,9 @@ private const val RECV_BUF: Int = 65_507
 
 enum class HandshakeAction { Ack, Control, Ignore }
 
-class UdpPlayer {
+class UdpPlayer(
+    val stats: StreamStats = StreamStats(),
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _event = MutableStateFlow<StreamEvent>(StreamEvent.Idle)
     val event: StateFlow<StreamEvent> get() = _event
@@ -56,16 +61,19 @@ class UdpPlayer {
     private var recvJob: Job? = null
     private var pingJob: Job? = null
     private var watchdogJob: Job? = null
+    private var idrJob: Job? = null
+    private var idrCall: okhttp3.Call? = null
     private var codec: MediaCodec? = null
     @Volatile private var surface: Surface? = null
     @Volatile private var running = false
-    private val pending = ConcurrentHashMap<Int, Array<ByteArray?>>()
+    private val pending = PendingFecStore()
+    private val reorder = AuReorder()
     private var sps: ByteArray? = null
     private var pps: ByteArray? = null
     private var configured = false
     private var waitKey = true
-    private var lastEmittedSeq = -1
     private val lastIdr = AtomicLong(0)
+    private val sentQueue = ArrayDeque<Long>()
     private val lastHeardMs = AtomicLong(0)
     private var hostAddr: InetAddress? = null
     private var hostPort: Int = 0
@@ -90,8 +98,18 @@ class UdpPlayer {
 
     private var sessionId: String? = null
 
-    fun start(host: String, port: Int, token: String, width: Int, height: Int, session: String? = null): Boolean {
-        stop()
+    fun start(
+        host: String,
+        port: Int,
+        token: String,
+        width: Int,
+        height: Int,
+        session: String? = null,
+        httpPort: Int = 0,
+    ): Boolean {
+        // Replacing the socket is not a leave. Bye would release the
+        // display session and the next Hello would attach to a dead id.
+        stop(sendBye = false)
         this.width = width
         this.height = height
         this.sessionId = session
@@ -105,6 +123,7 @@ class UdpPlayer {
             sock.soTimeout = 200
             socket = sock
             running = true
+            stats.reset()
             _event.value = StreamEvent.Connecting(Uri.parse("udp://$host:$port"))
             sendRaw(encodeHello(token, session))
             val buf = ByteArray(RECV_BUF)
@@ -132,14 +151,15 @@ class UdpPlayer {
                 stop()
                 return false
             }
-            sock.soTimeout = 0
+            sock.soTimeout = 20
             lastHeardMs.set(System.currentTimeMillis())
             recvJob = scope.launch { recvLoop() }
             pingJob = scope.launch { pingLoop() }
             watchdogJob = scope.launch { watchdogLoop() }
-            sendRaw(encodeCtrl(TYPE_IDR))
+            val idrPort = if (httpPort in 1..65535) httpPort else (port - 1).coerceAtLeast(1)
+            idrJob = scope.launch { readIdrStream(host, idrPort, token, session) }
             _event.value = StreamEvent.Buffering
-            Log.i(TAG, "UDP session up $host:$port")
+            Log.i(TAG, "UDP session up $host:$port idr=:$idrPort/idr")
             true
         } catch (e: Exception) {
             Log.w(TAG, "UDP start failed: ${e.message}")
@@ -148,24 +168,28 @@ class UdpPlayer {
         }
     }
 
-    fun stop() {
-        teardown(StreamEvent.Idle)
+    fun stop(sendBye: Boolean = true) {
+        teardown(StreamEvent.Idle, sendBye)
     }
 
     private fun fail(reason: String) {
-        teardown(StreamEvent.Disconnected(reason))
+        teardown(StreamEvent.Disconnected(reason), sendBye = true)
     }
 
-    private fun teardown(event: StreamEvent) {
+    private fun teardown(event: StreamEvent, sendBye: Boolean = true) {
         val wasRunning = running
         running = false
         recvJob?.cancel()
         pingJob?.cancel()
         watchdogJob?.cancel()
+        idrJob?.cancel()
+        idrCall?.cancel()
         recvJob = null
         pingJob = null
         watchdogJob = null
-        if (wasRunning) {
+        idrJob = null
+        idrCall = null
+        if (wasRunning && sendBye) {
             try { sendRaw(encodeBye(sessionId)) } catch (_: Exception) {}
         }
         try { socket?.close() } catch (_: Exception) {}
@@ -177,7 +201,8 @@ class UdpPlayer {
         pps = null
         configured = false
         waitKey = true
-        lastEmittedSeq = -1
+        reorder.reset()
+        sentQueue.clear()
         if (wasRunning || event !is StreamEvent.Idle) {
             _event.value = event
         }
@@ -216,6 +241,8 @@ class UdpPlayer {
                 prepareReceive(pkt, buf)
                 socket?.receive(pkt) ?: break
                 handle(buf.copyOf(pkt.length))
+            } catch (_: SocketTimeoutException) {
+                applyReorder(reorder.expire(System.currentTimeMillis()))
             } catch (e: Exception) {
                 if (running) Log.w(TAG, "recv: ${e.message}")
                 break
@@ -229,6 +256,7 @@ class UdpPlayer {
             || data[2] != 'B'.code.toByte() || data[3] != '1'.code.toByte()
         ) return
         lastHeardMs.set(System.currentTimeMillis())
+        stats.noteBytes(data.size.toLong())
         when (data[4]) {
             TYPE_VIDEO -> handleVideo(data)
             TYPE_PONG -> {
@@ -242,6 +270,7 @@ class UdpPlayer {
                 ewmaClockOffsetNs = if (ewmaClockOffsetNs == Long.MIN_VALUE) raw
                     else ((ewmaClockOffsetNs * 9L + raw) / 10L)
                 clockOffsetNs = ewmaClockOffsetNs
+                stats.clockOffsetNs = clockOffsetNs
             }
             TYPE_PROBE -> {
                 if (data.size < 7) return
@@ -252,6 +281,9 @@ class UdpPlayer {
             TYPE_PMTU -> {
                 if (data.size < 7) return
                 Log.i(TAG, "PMTU confirmed datagram=${le16(data, 5)}")
+                // Video can flow now; ask for a keyframe so we do not
+                // start mid-GOP on P-frames that were not sent earlier.
+                requestIdr()
             }
             TYPE_HELLO_ACK -> {}
             else -> {}
@@ -266,50 +298,56 @@ class UdpPlayer {
         val frags = le16(data, 10)
         val sentNs = le64(data, 20)
         val payload = data.copyOfRange(28, data.size)
-        if (frags <= 0 || frag >= frags) return
         dropStale(seq)
-        val slots = pending.getOrPut(seq) { arrayOfNulls(frags) }
-        if (slots.size != frags) {
-            pending[seq] = arrayOfNulls<ByteArray?>(frags).also { it[frag] = payload }
-            return
+        val done = pending.offer(seq, frag, frags, key, sentNs, payload) ?: return
+        val nowMs = System.currentTimeMillis()
+        applyReorder(
+            reorder.expire(nowMs) +
+                reorder.accept(AuReorder.Frame(done.seq, done.key, done.au, done.sentNs), nowMs),
+        )
+    }
+
+    private fun applyReorder(outs: List<AuReorder.Out>) {
+        for (out in outs) {
+            when (out) {
+                is AuReorder.Out.Gap -> {
+                    stats.noteDropped(out.dropped)
+                    waitKey = true
+                    requestIdr()
+                }
+                is AuReorder.Out.Video -> emitVideo(out.frame)
+            }
         }
-        slots[frag] = payload
-        if (slots.any { it == null }) return
-        pending.remove(seq)
-        val au = assemble(slots)
+    }
+
+    @Synchronized
+    private fun emitVideo(frame: AuReorder.Frame) {
         val now = System.currentTimeMillis() * 1_000_000L
-        val glass = ((now + clockOffsetNs - sentNs) / 1_000_000L).toInt()
-        if (glass in 0..5_000) _latencyMs.value = glass
-        val gap = lastEmittedSeq >= 0 && seqDelta(seq, lastEmittedSeq) != 1
-        lastEmittedSeq = seq
-        if (glass in 75..5_000 && !key) {
-            pending.keys.toList().forEach { pending.remove(it) }
-            waitKey = true
+        val glass = ((now + clockOffsetNs - frame.sentNs) / 1_000_000L).toInt()
+        if (glass in 0..5_000) {
+            _latencyMs.value = glass
+            stats.noteDelay(glass)
+        }
+        stats.noteFrame(H264.classifyAccessUnit(frame.au))
+        if (waitKey && !frame.key) {
+            stats.noteDropped()
             requestIdr()
             return
         }
-        if (gap && !key) {
-            waitKey = true
-            requestIdr()
-            return
-        }
-        if (waitKey && !key) {
-            requestIdr()
-            return
-        }
-        if (key) {
-            extractSpsPps(au)
+        if (frame.key) {
+            extractSpsPps(frame.au)
             waitKey = false
             if (_event.value !is StreamEvent.Playing) _event.value = StreamEvent.Playing
         }
-        feedCodec(au, key)
+        feedCodec(frame.au, frame.key, frame.sentNs)
     }
 
     private fun dropStale(seq: Int) {
         if (pending.size < 4) return
-        val stale = pending.keys.filter { seqDelta(seq, it) in 2..32767 }
+        val stale = pending.keys().filter { seqDelta(seq, it) in 2..32767 }
         if (stale.isEmpty()) return
         for (s in stale) pending.remove(s)
+        stats.noteDropped(stale.size)
         waitKey = true
         requestIdr()
     }
@@ -336,7 +374,8 @@ class UdpPlayer {
         }
     }
 
-    private fun feedCodec(au: ByteArray, key: Boolean) {
+    @Synchronized
+    private fun feedCodec(au: ByteArray, key: Boolean, sentNs: Long) {
         val surf = surface ?: return
         val sps0 = sps
         val pps0 = pps
@@ -372,44 +411,136 @@ class UdpPlayer {
         }
         val c = codec ?: return
         if (waitKey && !key) {
+            stats.noteDropped()
             requestIdr()
             return
         }
         try {
-            val inIx = c.dequeueInputBuffer(8_000)
+            // Free completed outputs first so a slow dequeue does not
+            // skip a P-frame. A hole in an infinite GOP (VA-API has no
+            // intra-refresh) stays on screen as block artifacts until IDR.
+            drainOutputs(c, sentNs)
+            var inIx = c.dequeueInputBuffer(8_000)
             if (inIx < 0) {
-                if (key) waitKey = true
+                drainOutputs(c, sentNs)
+                inIx = c.dequeueInputBuffer(0)
+            }
+            if (inIx < 0) {
+                Log.w(TAG, "codec input full; hold until IDR")
+                stats.noteDropped()
+                waitKey = true
+                requestIdr()
                 return
             }
             val inBuf = c.getInputBuffer(inIx) ?: return
             if (inBuf.remaining() < au.size) {
                 Log.w(TAG, "codec input ${inBuf.remaining()} < au ${au.size}")
                 c.queueInputBuffer(inIx, 0, 0, 0, 0)
+                stats.noteDropped()
                 waitKey = true
                 requestIdr()
+                drainOutputs(c, sentNs)
                 return
             }
             inBuf.clear()
             inBuf.put(au)
             val flags = if (key) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-            c.queueInputBuffer(inIx, 0, au.size, System.nanoTime() / 1000, flags)
-            val info = MediaCodec.BufferInfo()
-            var outIx = c.dequeueOutputBuffer(info, 0)
-            while (outIx >= 0) {
-                c.releaseOutputBuffer(outIx, true)
-                outIx = c.dequeueOutputBuffer(info, 0)
+            // Real-time PTS so vendor low-latency stays on. A 1,2,3 µs
+            // counter looks like a file timeline and many SoCs then hold ~200 ms.
+            val ptsUs = System.nanoTime() / 1000L
+            if (sentNs > 0L) {
+                sentQueue.addLast(sentNs)
+                while (sentQueue.size > 120) sentQueue.removeFirst()
             }
+            c.queueInputBuffer(inIx, 0, au.size, ptsUs, flags)
+            drainOutputs(c, sentNs)
         } catch (e: Exception) {
             Log.w(TAG, "codec feed: ${e.message}")
+            stats.noteDropped()
             configured = false
             waitKey = true
             requestIdr()
         }
     }
 
-    private fun requestIdr() {
+    private fun drainOutputs(c: MediaCodec, sentNs: Long) {
+        val info = MediaCodec.BufferInfo()
+        var outIx = c.dequeueOutputBuffer(info, 0)
+        while (outIx >= 0) {
+            val presentedSent = sentQueue.removeFirstOrNull() ?: sentNs
+            stats.notePresented(presentedSent)
+            c.releaseOutputBuffer(outIx, System.nanoTime())
+            outIx = c.dequeueOutputBuffer(info, 0)
+        }
+    }
+
+    @Synchronized
+    private fun emitReliableKey(v: IdrFrames.Video) {
+        val now = System.currentTimeMillis() * 1_000_000L
+        val glass = ((now + clockOffsetNs - v.sentNs) / 1_000_000L).toInt()
+        if (glass in 0..5_000) {
+            _latencyMs.value = glass
+            stats.noteDelay(glass)
+        }
+        stats.noteFrame(H264.classifyAccessUnit(v.au))
+        extractSpsPps(v.au)
+        reorder.onReliableKeyframe()
+        waitKey = false
+        if (_event.value !is StreamEvent.Playing) _event.value = StreamEvent.Playing
+        feedCodec(v.au, true, v.sentNs)
+    }
+
+    private suspend fun readIdrStream(host: String, httpPort: Int, token: String, session: String?) {
+        val url = StringBuilder("http://$host:$httpPort/idr")
+        val q = ArrayList<String>()
+        if (token.isNotBlank()) q.add("token=$token")
+        if (!session.isNullOrBlank()) q.add("session=$session")
+        if (q.isNotEmpty()) url.append('?').append(q.joinToString("&"))
+        val client = OkHttpClient.Builder()
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .writeTimeout(2, TimeUnit.SECONDS)
+            .build()
+        val req = Request.Builder()
+            .url(url.toString().toHttpUrl())
+            .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+            .get()
+            .build()
+        val call = client.newCall(req)
+        idrCall = call
+        try {
+            call.execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "idr stream HTTP ${resp.code}")
+                    return
+                }
+                val src = resp.body?.byteStream() ?: return
+                val reader = IdrFrames.Reader()
+                val tmp = ByteArray(8192)
+                Log.i(TAG, "idr TCP stream open")
+                while (running) {
+                    val n = src.read(tmp)
+                    if (n < 0) break
+                    if (n == 0) continue
+                    stats.noteBytes(n.toLong())
+                    reader.push(tmp.copyOf(n))
+                    var msg = reader.pop()
+                    while (msg != null) {
+                        if (msg.key) emitReliableKey(msg)
+                        msg = reader.pop()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            if (running) Log.w(TAG, "idr stream: ${e.message}")
+        } finally {
+            if (idrCall === call) idrCall = null
+        }
+    }
+
+    fun requestIdr() {
         val now = System.currentTimeMillis()
-        if (now - lastIdr.get() < 250) return
+        if (!Idr.due(now, lastIdr.get())) return
         lastIdr.set(now)
         sendRaw(encodeCtrl(TYPE_IDR))
     }
