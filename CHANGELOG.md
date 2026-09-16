@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### ✨ Added
+- **WebTransport Annex-B + WebCodecs web client**:
+  - Chromium opens WebTransport on `signaling_port + 2` (`wt_port`) with `serverCertificateHashes` and decodes Annex-B access units with `VideoDecoder` onto a canvas.
+  - P-frames ride QUIC datagrams (unreliable). Hello, ping/pong, and IDR stay on the control stream. The same port serves the UI over HTTPS; HTTP `/` and `/client/` redirect there. Android keeps HTTP on `:8788`.
+  - The self-signed certificate is stored in `$XDG_CONFIG_HOME/orbiscreen/wt-cert.pem` and `wt-key.pem` (`0o600`, parent `0o700`) and reused across restarts (14-day WebTransport cap).
+
+### 🐛 Fixed
+- **Quinn datagram send no longer aborts the daemon**: pin `quinn-proto` to 0.11.16 (0.11.17 double-subtracts dropped datagram bytes).
+
 ## [v0.28.9] - 2026-09-16
 
 Introduce per-client KWin virtual displays and isolated touch scoping to support multiple simultaneous tablets, expand KWin input device introspection beyond event63, add automatic fallback session creation on attach for full backwards compatibility with legacy clients, and bump the release matrix across all platforms.

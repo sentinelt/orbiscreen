@@ -2,10 +2,13 @@
 // https://github.com/shadow-x78/orbiscreen
 
 pub mod adb;
+pub mod annexb;
 pub mod aoa;
 pub mod display;
 pub mod mdns;
 pub mod udp_stream;
+pub mod wt_protocol;
+pub mod wt_stream;
 
 pub use display::{AttachedDisplay, DisplayCommand, DisplayCtl, DisplayInfo};
 
@@ -13,6 +16,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -134,7 +138,7 @@ impl Stats {
         self.frames_forwarded.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn note_auth_failure(&self) {
+    pub(crate) fn note_auth_failure(&self) {
         self.auth_failures.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -172,7 +176,7 @@ impl Stats {
     }
 }
 
-struct ClientGuard(Arc<Stats>);
+pub(crate) struct ClientGuard(pub(crate) Arc<Stats>);
 
 impl Drop for ClientGuard {
     fn drop(&mut self) {
@@ -251,6 +255,14 @@ impl Transport {
         let input_tx = self.input_tx;
         let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(64);
         let (client_shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(16);
+        let wt_port = wt_stream::default_wt_port(self.cfg.signaling_port);
+        let wt_hub = match wt_stream::WtHub::new(wt_port) {
+            Ok(hub) => Some(hub),
+            Err(e) => {
+                warn!("webtransport identity failed: {e}");
+                None
+            }
+        };
         let state = AppState {
             config: self.cfg.clone(),
             input_tx,
@@ -266,8 +278,17 @@ impl Transport {
             idr_tx,
             client_shutdown_tx,
             displays: displays.clone(),
+            wt_offer: wt_hub.as_ref().map(|h| h.offer.clone()),
         };
-        let app = build_router(state.clone());
+        let https_pem = wt_hub.as_ref().and_then(|hub| match hub.https_pem() {
+            Ok(pem) => Some(pem),
+            Err(e) => {
+                warn!("https certificate export failed: {e}");
+                None
+            }
+        });
+        let http_app = build_http_router(state.clone());
+        let https_app = build_https_router(state.clone());
         let listener = TcpListener::bind(("0.0.0.0", self.cfg.signaling_port))
             .await
             .map_err(|e| TransportError::Http(e.to_string()))?;
@@ -277,12 +298,26 @@ impl Transport {
             .unwrap_or_else(|_| "?".into());
         info!("orbiscreen transport listening on http://{local}");
 
+        if let Some((cert_pem, key_pem)) = https_pem {
+            let https_port = wt_port;
+            let https_app = https_app;
+            let https_shutdown = shutdown_rx.clone();
+            tokio::spawn(async move {
+                if let Err(e) =
+                    serve_https(https_port, cert_pem, key_pem, https_app, https_shutdown).await
+                {
+                    warn!("https server failed: {e}");
+                }
+            });
+        }
+
         let udp_port = udp_stream::default_udp_port(self.cfg.signaling_port);
         let udp_video = state.video_tx.subscribe();
         let udp_idr = state.idr_tx.clone();
         let udp_stats = state.stats.clone();
         let udp_token = state.token.clone();
         let udp_shutdown = shutdown_rx.clone();
+        let udp_displays = displays.clone();
         tokio::spawn(async move {
             udp_stream::run_udp_hub(
                 udp_port,
@@ -292,10 +327,35 @@ impl Transport {
                 udp_stats,
                 udp_shutdown,
                 udp_stream::UdpLimits::from_env(),
-                displays,
+                udp_displays,
             )
             .await;
         });
+
+        if let Some(hub) = wt_hub {
+            let wt_video = state.video_tx.clone();
+            let wt_idr = state.idr_tx.clone();
+            let wt_stats = state.stats.clone();
+            let wt_token = state.token.clone();
+            let wt_shutdown = shutdown_rx.clone();
+            let wt_displays = displays.clone();
+            let wt_w = display_width;
+            let wt_h = display_height;
+            tokio::spawn(async move {
+                wt_stream::run_wt_hub(
+                    hub,
+                    wt_token,
+                    wt_video,
+                    wt_idr,
+                    wt_stats,
+                    wt_shutdown,
+                    wt_displays,
+                    wt_w,
+                    wt_h,
+                )
+                .await;
+            });
+        }
 
         let usb_stats_task = if self.cfg.enable_usb_supervisors {
             let aoa_port = self.cfg.signaling_port;
@@ -346,7 +406,7 @@ impl Transport {
 
         let serve_fut = axum::serve(
             listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
+            http_app.into_make_service_with_connect_info::<SocketAddr>(),
         );
         tokio::select! {
             res = serve_fut => {
@@ -387,11 +447,35 @@ struct AppState {
     idr_tx: Option<mpsc::Sender<()>>,
     client_shutdown_tx: tokio::sync::broadcast::Sender<()>,
     displays: Option<DisplayCtl>,
+    wt_offer: Option<wt_stream::WtOffer>,
+}
+
+async fn alt_svc_h3(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let client_asset = request.uri().path().starts_with("/client");
+    let mut response = next.run(request).await;
+    if let Some(port) = state.wt_offer.as_ref().map(|o| o.port) {
+        let value = format!("h3=\":{port}\"; ma=86400");
+        if let Ok(hv) = axum::http::HeaderValue::from_str(&value) {
+            response.headers_mut().insert("alt-svc", hv);
+        }
+    }
+    if client_asset {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+    }
+    response
 }
 
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/stream", get(stream_handler).head(stream_head_handler))
+        .route("/au", get(au_handler))
         .route("/input", post(input_post))
         .route("/api/control", post(api_control))
         .route(
@@ -405,6 +489,92 @@ fn build_router(state: AppState) -> Router {
         .route("/client/config.json", get(client_config))
         .nest_service("/client", ServeDir::new(&state.config.client_web_dir))
         .with_state(state)
+}
+
+fn build_http_router(state: AppState) -> Router {
+    build_router(state.clone()).layer(middleware::from_fn_with_state(state, http_to_https))
+}
+
+fn build_https_router(state: AppState) -> Router {
+    build_router(state.clone()).layer(middleware::from_fn_with_state(state, alt_svc_h3))
+}
+
+pub(crate) fn should_redirect_browser_to_https(path: &str) -> bool {
+    matches!(path, "/" | "/client" | "/client/" | "/client/index.html")
+}
+
+pub(crate) fn hostname_from_host_header(host: &str) -> &str {
+    if let Some(rest) = host.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            return &host[..=end + 1];
+        }
+    }
+    match host.rsplit_once(':') {
+        Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    }
+}
+
+pub(crate) fn https_redirect_location(host: &str, path_and_query: &str, https_port: u16) -> String {
+    format!(
+        "https://{}:{}{}",
+        hostname_from_host_header(host),
+        https_port,
+        path_and_query
+    )
+}
+
+async fn http_to_https(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let Some(port) = state.wt_offer.as_ref().map(|o| o.port) else {
+        return next.run(request).await;
+    };
+    if request.method() != axum::http::Method::GET && request.method() != axum::http::Method::HEAD {
+        return next.run(request).await;
+    }
+    if !should_redirect_browser_to_https(request.uri().path()) {
+        return next.run(request).await;
+    }
+    let host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    let pq = request
+        .uri()
+        .path_and_query()
+        .map(|p| p.as_str())
+        .unwrap_or(request.uri().path());
+    axum::response::Redirect::permanent(&https_redirect_location(host, pq, port)).into_response()
+}
+
+async fn serve_https(
+    port: u16,
+    cert_pem: Vec<u8>,
+    key_pem: Vec<u8>,
+    app: Router,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
+        .await
+        .map_err(|e| e.to_string())?;
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    info!("orbiscreen web client listening on https://0.0.0.0:{port}");
+    let handle = axum_server::Handle::new();
+    let stop = handle.clone();
+    tokio::spawn(async move {
+        let _ = shutdown.changed().await;
+        stop.shutdown();
+    });
+    axum_server::bind_rustls(addr, config)
+        .handle(handle)
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -508,7 +678,11 @@ async fn api_info(State(state): State<AppState>) -> impl IntoResponse {
         "encoder": encoder,
         "version": state.version,
         "udp_port": udp_stream::default_udp_port(state.config.signaling_port),
-        "transport": ["http-mpegts", "udp-annexb"],
+        "wt_port": state.wt_offer.as_ref().map(|o| o.port),
+        "wt_path": state.wt_offer.as_ref().map(|o| o.path),
+        "cert_sha256": state.wt_offer.as_ref().map(|o| o.cert_sha256.clone()),
+        "wt_hosts": state.wt_offer.as_ref().map(|o| o.hosts.clone()),
+        "transport": ["http-mpegts", "udp-annexb", "webtransport-annexb"],
     });
     Json(envelope)
 }
@@ -616,6 +790,10 @@ async fn client_config(
             "token": state.token,
             "display_width": state.display_width,
             "display_height": state.display_height,
+            "wt_port": state.wt_offer.as_ref().map(|o| o.port),
+            "wt_path": state.wt_offer.as_ref().map(|o| o.path),
+            "cert_sha256": state.wt_offer.as_ref().map(|o| o.cert_sha256.clone()),
+            "wt_hosts": state.wt_offer.as_ref().map(|o| o.hosts.clone()),
         })),
     )
 }
@@ -684,6 +862,12 @@ fn inject_ctrl_alt_del(tx: &mpsc::Sender<IncomingInput>) {
     ] {
         let _ = tx.try_send(IncomingInput::Key(KeyEvent { code, pressed }));
     }
+}
+
+pub(crate) const IDR_DEBOUNCE: Duration = Duration::from_millis(250);
+
+fn idr_due(last: Instant, now: Instant) -> bool {
+    now.duration_since(last) >= IDR_DEBOUNCE
 }
 
 fn request_idr(state: &AppState, session: Option<&str>) {
@@ -922,6 +1106,114 @@ fn push_h264_packet(
 
 const MAX_STREAM_CLIENTS: usize = 8;
 
+async fn au_handler(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+) -> axum::response::Response {
+    use tokio_stream::StreamExt;
+    if state.stats.active_clients() >= MAX_STREAM_CLIENTS {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    let session_q = query_value(request.uri().query(), "session").map(str::to_string);
+    let attached = if let Some(ctl) = &state.displays {
+        match ctl.attach(session_q.clone()).await {
+            Ok(att) => Some(att),
+            Err(e) => {
+                warn!("au attach failed: {e}");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    } else {
+        None
+    };
+    let session_id = attached.as_ref().map(|a| a.info.id.clone());
+    let mut video_rx = if let Some(att) = attached {
+        att.video
+    } else {
+        state.video_tx.subscribe()
+    };
+    state.stats.client_started();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(8);
+    let stats = state.stats.clone();
+    let idr_tx = state.idr_tx.clone();
+    let displays = state.displays.clone();
+    let lag_ctl = displays.clone();
+    let lag_session = session_id.clone();
+    tokio::spawn(async move {
+        let _guard = ClientGuard(stats);
+        struct DetachGuard(Option<(DisplayCtl, String)>);
+        impl Drop for DetachGuard {
+            fn drop(&mut self) {
+                if let Some((ctl, id)) = self.0.take() {
+                    tokio::spawn(async move { ctl.detach(&id).await });
+                }
+            }
+        }
+        let _detach = DetachGuard(displays.zip(session_id));
+        let mut wait_key = true;
+        let mut last_idr = Instant::now()
+            .checked_sub(IDR_DEBOUNCE)
+            .unwrap_or_else(Instant::now);
+        let mut request_idr = || {
+            let now = Instant::now();
+            if now.duration_since(last_idr) < IDR_DEBOUNCE {
+                return;
+            }
+            last_idr = now;
+            if let (Some(ctl), Some(id)) = (lag_ctl.as_ref(), lag_session.as_ref()) {
+                let ctl = ctl.clone();
+                let id = id.clone();
+                tokio::spawn(async move { ctl.idr(&id).await });
+            } else if let Some(tx) = &idr_tx {
+                let _ = tx.try_send(());
+            }
+        };
+        request_idr();
+        loop {
+            if tx.is_closed() {
+                break;
+            }
+            let pkt = match video_rx.recv().await {
+                Ok(p) => p,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    wait_key = true;
+                    request_idr();
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            };
+            if wait_key {
+                if !pkt.is_keyframe {
+                    request_idr();
+                    continue;
+                }
+                wait_key = false;
+            }
+            let Ok(frame) = wt_protocol::encode_video(&pkt, {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0)
+            }) else {
+                continue;
+            };
+            if tx.send(frame).await.is_err() {
+                break;
+            }
+        }
+    });
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx)
+        .map(|chunk| Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(chunk)));
+    (
+        [
+            ("content-type", "application/octet-stream"),
+            ("cache-control", "no-cache, no-store, must-revalidate"),
+        ],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response()
+}
+
 async fn stream_head_handler() -> impl IntoResponse {
     ([("content-type", "video/mp2t")], StatusCode::OK)
 }
@@ -946,7 +1238,7 @@ fn build_video_pipeline() -> Result<
                         ! video/x-h264,stream-format=byte-stream,alignment=au \
                         ! h264parse config-interval=1 \
                         ! mpegtsmux alignment=7 \
-                        ! appsink name=sink drop=false sync=false max-buffers=0 emit-signals=false";
+                        ! appsink name=sink drop=false sync=false max-buffers=8 emit-signals=false";
     let p = gstreamer::parse::launch(pipeline_str).map_err(|_| ())?;
     let pipeline = p.downcast::<gstreamer::Pipeline>().map_err(|_| ())?;
     let appsrc = pipeline
@@ -959,6 +1251,7 @@ fn build_video_pipeline() -> Result<
         .ok_or(())?;
     Ok((pipeline, appsrc, appsink))
 }
+
 
 async fn stream_handler(
     State(state): State<AppState>,
@@ -1002,14 +1295,11 @@ async fn stream_handler(
                     Ok(sample) => {
                         if let Some(buffer) = sample.buffer() {
                             if let Ok(map) = buffer.map_readable() {
-                                match tx.try_send(map.to_vec()) {
-                                    Ok(()) => {}
-                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                        debug!("stream client buffer full, dropping mpeg-ts chunk");
-                                    }
-                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                        return Err(gstreamer::FlowError::Eos);
-                                    }
+                                // Never drop muxed TS: a hole mid-GOP garbles the
+                                // decoder until the next IDR. Backpressure waits
+                                // for a keyframe on the H.264 side if appsrc push fails.
+                                if tx.blocking_send(map.to_vec()).is_err() {
+                                    return Err(gstreamer::FlowError::Eos);
                                 }
                             }
                         }
@@ -1074,11 +1364,12 @@ async fn stream_handler(
     let session_id = attached.as_ref().map(|a| a.info.id.clone());
 
     state.stats.client_started();
-    request_idr(&state, session_id.as_deref());
     let appsrc_clone = appsrc.clone();
     let stats = state.stats.clone();
     let idr_tx = state.idr_tx.clone();
     let displays = state.displays.clone();
+    let lag_ctl = displays.clone();
+    let lag_session = session_id.clone();
 
     struct PipelineGuard(gstreamer::Pipeline);
     impl Drop for PipelineGuard {
@@ -1113,6 +1404,26 @@ async fn stream_handler(
         let mut wait_keyframe = true;
         let mut stream_pts_ns: u64 = 0;
         let mut last_pkt_pts_ns: Option<u64> = None;
+        let mut last_idr_at = Instant::now()
+            .checked_sub(IDR_DEBOUNCE)
+            .unwrap_or_else(Instant::now);
+        let mut request_idr = || {
+            let now = Instant::now();
+            if !idr_due(last_idr_at, now) {
+                return;
+            }
+            last_idr_at = now;
+            if let (Some(ctl), Some(id)) = (lag_ctl.as_ref(), lag_session.as_ref()) {
+                let ctl = ctl.clone();
+                let id = id.clone();
+                tokio::spawn(async move { ctl.idr(&id).await });
+            } else if let Some(tx) = &idr_tx {
+                let _ = tx.try_send(());
+            }
+        };
+        // Receiver is subscribed; ask now so the IDR is not encoded
+        // before this client can see it.
+        request_idr();
         loop {
             if tx_alive.is_closed() {
                 debug!("stream client disconnected");
@@ -1129,9 +1440,7 @@ async fn stream_handler(
                         debug!("stream client lagged {n} packets; waiting for keyframe");
                         wait_keyframe = true;
                         last_pkt_pts_ns = None;
-                        if let Some(tx) = &idr_tx {
-                            let _ = tx.try_send(());
-                        }
+                        request_idr();
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -1139,6 +1448,9 @@ async fn stream_handler(
             };
             if wait_keyframe {
                 if !pkt.is_keyframe {
+                    // Same as the UDP client: a lost IDR plus more P-frames
+                    // asks again, at most four times a second.
+                    request_idr();
                     continue;
                 }
                 wait_keyframe = false;
@@ -1173,9 +1485,7 @@ async fn stream_handler(
                     gstreamer::FlowError::Flushing | gstreamer::FlowError::Eos => break,
                     _ => {
                         wait_keyframe = true;
-                        if let Some(tx) = &idr_tx {
-                            let _ = tx.try_send(());
-                        }
+                        request_idr();
                     }
                 }
             }
@@ -1199,6 +1509,26 @@ async fn stream_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_paths_redirect_to_https() {
+        assert!(should_redirect_browser_to_https("/"));
+        assert!(should_redirect_browser_to_https("/client/index.html"));
+        assert!(!should_redirect_browser_to_https("/health"));
+        assert!(!should_redirect_browser_to_https("/client/config.json"));
+        assert!(!should_redirect_browser_to_https("/api/info"));
+        assert!(!should_redirect_browser_to_https("/stream"));
+    }
+
+    #[test]
+    fn https_redirect_rewrites_host_port() {
+        assert_eq!(
+            https_redirect_location("192.168.39.191:8788", "/client/index.html?token=a", 8790),
+            "https://192.168.39.191:8790/client/index.html?token=a"
+        );
+        assert_eq!(hostname_from_host_header("[fe80::1]:8788"), "[fe80::1]");
+        assert_eq!(hostname_from_host_header("localhost"), "localhost");
+    }
 
     #[test]
     fn service_descriptor_carries_port() {
@@ -1239,6 +1569,59 @@ mod tests {
         assert!(token_eq("abc", "abc"));
         assert!(!token_eq("abc", "abd"));
         assert!(!token_eq("abc", "abcd"));
+    }
+
+    #[test]
+    fn idr_debounce_is_250ms() {
+        assert_eq!(IDR_DEBOUNCE, Duration::from_millis(250));
+        let t0 = Instant::now();
+        assert!(!idr_due(t0, t0 + Duration::from_millis(249)));
+        assert!(idr_due(t0, t0 + Duration::from_millis(250)));
+    }
+
+    #[test]
+    fn js_hello_frame_decodes_in_rust() {
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let script = manifest.join("../../clients/web/annexb.js");
+        let output = std::process::Command::new("node")
+            .arg("-e")
+            .arg(format!(
+                "const a=require({}); process.stdout.write(Buffer.from(a.encodeHello('tok','sess')));",
+                serde_json::to_string(&script.to_string_lossy()).unwrap()
+            ))
+            .output()
+            .expect("node encodeHello");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let (body, used) = wt_protocol::split_frame(&output.stdout)
+            .unwrap()
+            .expect("complete frame");
+        assert_eq!(used, output.stdout.len());
+        match wt_protocol::decode_message(body).unwrap() {
+            wt_protocol::Message::Hello(h) => {
+                assert_eq!(h.token, "tok");
+                assert_eq!(h.session, "sess");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn annexb_js_unit_tests() {
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = manifest.join("../..");
+        for script in ["clients/web/annexb.test.js"] {
+            let status = std::process::Command::new("node")
+                .arg("--test")
+                .arg(script)
+                .current_dir(&root)
+                .status()
+                .expect("node --test");
+            assert!(status.success(), "{script} failed");
+        }
     }
 
     #[test]

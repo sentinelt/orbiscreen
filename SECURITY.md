@@ -166,7 +166,7 @@ The Android release signing key (`orbiscreen-release.keystore`) was removed from
 <a id="audit"></a>
 ## 🔬 Security Audit
 
-Orbiscreen (v0.25.9) is written in Rust (edition 2021) plus a Kotlin Android client (Material 3 + Jetpack Compose), a small browser web client (MSE via vendored mpegts.js), and a Linux desktop GUI control center (Tauri v2 + WebKitGTK). A running daemon performs:
+Orbiscreen (v0.27.4) is written in Rust (edition 2021) plus a Kotlin Android client (Material 3 + Jetpack Compose), a small browser web client (WebTransport + WebCodecs `VideoDecoder`), and a Linux desktop GUI control center (Tauri v2 + WebKitGTK). A running daemon performs:
  
 - `open()` on `/dev/dri/card*` evdi nodes for capture
 - Compositor IPC over session-local Unix sockets: sway i3-ipc (`$SWAYSOCK`) and Hyprland (`HYPRLAND_INSTANCE_SIGNATURE`) to create/destroy headless outputs

@@ -187,6 +187,14 @@ pub fn default_token_path() -> std::path::PathBuf {
     default_config_path().with_file_name("token")
 }
 
+pub fn default_wt_cert_path() -> std::path::PathBuf {
+    default_config_path().with_file_name("wt-cert.pem")
+}
+
+pub fn default_wt_key_path() -> std::path::PathBuf {
+    default_config_path().with_file_name("wt-key.pem")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +290,14 @@ height = 999999
         assert_eq!(
             path,
             std::path::PathBuf::from("/tmp/orbiscreen-test-xdg/orbiscreen/orbiscreen.toml")
+        );
+        assert_eq!(
+            default_wt_cert_path(),
+            std::path::PathBuf::from("/tmp/orbiscreen-test-xdg/orbiscreen/wt-cert.pem")
+        );
+        assert_eq!(
+            default_wt_key_path(),
+            std::path::PathBuf::from("/tmp/orbiscreen-test-xdg/orbiscreen/wt-key.pem")
         );
         match prev {
             Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),

@@ -42,7 +42,7 @@ Android and web clients talk to the daemon over HTTP, not D-Bus. Current routing
 | `POST /api/control` | token | `lock`, `blank`, `unblank`, `ctrl_alt_del` host actions |
 | `GET /client/config.json` | public | Bootstrap for the web client: `{token, display_width, display_height}` |
 | `GET /` | public | Redirect to the bundled web client |
-| `GET /client/*` | public | Bundled web client static files (MSE player via vendored mpegts.js) |
+| `GET /client/*` | public | Bundled web client static files (WebTransport + WebCodecs `VideoDecoder`) |
 
 **Token model:** every daemon start generates a fresh random token (32 bytes, base64url). Protected routes require it via `Authorization: Bearer <token>` or `?token=<token>`. Clients obtain it from the mDNS TXT record or from `/client/config.json`. Because the token is readable by anyone who can reach the port, this is abuse protection, not strong authentication - see `SECURITY.md`.
 

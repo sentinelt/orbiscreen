@@ -500,16 +500,15 @@ The `evdi` kernel module is not loaded, so Orbiscreen falls back to primary-desk
 ## 🌐 Web client loads but shows no picture
 
 **Symptom:**
-`http://<host>:8788/` loads, the status bar keeps saying "Connecting to stream…" or immediately reports "This browser does not support MSE playback".
+`https://<host>:8790/client/` loads, the overlay stays on "Connecting", or it reports "Unsupported browser" and asks for Chrome, Brave, or Edge.
 
 **Cause:**
-The web client demuxes MPEG-TS with the locally vendored `mpegts.js` and feeds H.264 to MediaSource Extensions (MSE). Browsers without MSE or with autoplay blocked never decode the stream. There is no WebRTC path.
+The web client opens WebTransport and decodes Annex-B with WebCodecs `VideoDecoder` onto a canvas. HTTP `/` and `/client/` on the signaling port redirect there. Accept the self-signed certificate once. Browsers without `VideoDecoder` (Firefox Mobile is one) never decode the stream. There is no MSE or WebRTC path.
 
 **Fix:**
-1. Use a browser with MSE live playback: desktop Chrome, Firefox, or Edge. iOS Safari does not support MSE, and Firefox on mobile has no MSE either.
-2. If autoplay was blocked, click/tap the video once to start playback.
-3. Confirm the tab was served by the daemon (vendor mpegts.js loads from `/client/vendor/mpegts.js`) - not a stale copy cached from an older deployment.
-4. Check DevTools console/network: a 401 on `/stream` means the token flow failed - see [401 Unauthorized](#token-401).
+1. Open the page in Chrome, Brave, Edge, or another Chromium browser. Firefox Mobile does not implement WebCodecs `VideoDecoder`.
+2. Confirm the tab was served over HTTPS on the WebTransport port (`signaling_port + 2`, usually 8790) and that you accepted the certificate.
+3. Check DevTools console/network: a 401 on `/au` or a failed Hello means the token flow failed - see [401 Unauthorized](#token-401).
 
 ---
 

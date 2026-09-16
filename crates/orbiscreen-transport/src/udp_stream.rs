@@ -770,32 +770,33 @@ pub async fn run_udp_hub(
                         .collect()
                 };
                 for addr in expired_addrs {
-                    let mut should_idr = false;
-                    {
-                        let mut map = clients.lock().await;
-                        if let Some(client) = map.get_mut(&addr) {
-                            let expired = client
-                                .probe_deadline
-                                .is_some_and(|deadline| now >= deadline);
-                            if expired {
-                                let before = client.pmtu.current_probe();
-                                client.probe_deadline = None;
-                                client.pmtu.on_timeout();
-                                if client.pmtu.current_probe() != before {
-                                    bump_probe_id(client);
-                                }
-                                if client.pmtu.current_probe().is_some() {
-                                    send_probe(&sock, addr, client, limits).await;
-                                }
-                                if client.pmtu.is_complete() {
-                                    announce_pmtu(&sock, addr, client, limits).await;
-                                    should_idr = true;
-                                }
+                    let mut map = clients.lock().await;
+                    if let Some(client) = map.get_mut(&addr) {
+                        let expired = client
+                            .probe_deadline
+                            .is_some_and(|deadline| now >= deadline);
+                        if expired {
+                            let before = client.pmtu.current_probe();
+                            client.probe_deadline = None;
+                            client.pmtu.on_timeout();
+                            if client.pmtu.current_probe() != before {
+                                bump_probe_id(client);
+                            }
+                            if client.pmtu.current_probe().is_some() {
+                                send_probe(&sock, addr, client, limits).await;
+                            }
+                            if client.pmtu.is_complete() {
+                                enable_udp_video(
+                                    &sock,
+                                    addr,
+                                    client,
+                                    limits,
+                                    displays.as_ref(),
+                                    idr_tx.as_ref(),
+                                )
+                                .await;
                             }
                         }
-                    }
-                    if should_idr {
-                        request_idr_sender(idr_tx.as_ref());
                     }
                 }
             }
@@ -897,7 +898,6 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                     payload = client.pmtu.video_payload(),
                     "UDP client joined"
                 );
-                request_idr_sender(ctx.idr_tx);
                 if let Some(ctl) = ctx.displays {
                     match ctl.attach(session.clone()).await {
                         Ok(att) => {
@@ -908,10 +908,6 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                             client.video_task = Some(tokio::spawn(async move {
                                 forward_udp_video(sock, addr, att.video, payload, limits).await;
                             }));
-                            if let Some(tx) = ctx.idr_tx {
-                                let _ = tx.try_send(());
-                            }
-                            let _ = ctl.idr(&att.info.id).await;
                         }
                         Err(e) => warn!(%addr, "UDP attach failed: {e}"),
                     }
@@ -923,11 +919,8 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                     send_probe(ctx.sock, addr, client, ctx.limits).await;
                 }
                 if client.pmtu.is_complete() {
-                    client.payload.store(
-                        client.pmtu.video_payload(),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
-                    announce_pmtu(ctx.sock, addr, client, ctx.limits).await;
+                    enable_udp_video(ctx.sock, addr, client, ctx.limits, ctx.displays, ctx.idr_tx)
+                        .await;
                 }
             }
         }
@@ -952,9 +945,15 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                 send_datagram(ctx.sock, &encode_pong(t0, now_unix_ns()), addr, ctx.limits).await;
         }
         Some(Packet::Idr) => {
-            if touch_client(ctx.clients, addr).await {
-                request_idr_sender(ctx.idr_tx);
-            }
+            let session = {
+                let mut map = ctx.clients.lock().await;
+                let Some(client) = map.get_mut(&addr) else {
+                    return;
+                };
+                client.last_seen = Instant::now();
+                client.session.clone()
+            };
+            request_client_idr(ctx.displays, session.as_deref(), ctx.idr_tx).await;
         }
         Some(Packet::ProbeAck { id, recv }) => {
             let mut map = ctx.clients.lock().await;
@@ -977,8 +976,15 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                         send_probe(ctx.sock, addr, client, ctx.limits).await;
                     }
                     if client.pmtu.is_complete() {
-                        announce_pmtu(ctx.sock, addr, client, ctx.limits).await;
-                        request_idr_sender(ctx.idr_tx);
+                        enable_udp_video(
+                            ctx.sock,
+                            addr,
+                            client,
+                            ctx.limits,
+                            ctx.displays,
+                            ctx.idr_tx,
+                        )
+                        .await;
                     }
                 }
             }
@@ -1011,6 +1017,37 @@ async fn touch_client(
 fn request_idr_sender(idr_tx: Option<&tokio::sync::mpsc::Sender<()>>) {
     if let Some(tx) = idr_tx {
         let _ = tx.try_send(());
+    }
+}
+
+async fn request_client_idr(
+    displays: Option<&super::DisplayCtl>,
+    session: Option<&str>,
+    idr_tx: Option<&tokio::sync::mpsc::Sender<()>>,
+) {
+    if let (Some(ctl), Some(id)) = (displays, session.filter(|s| !s.is_empty())) {
+        info!(session = %id, "UDP IDR for session");
+        ctl.idr(id).await;
+        return;
+    }
+    info!(session = ?session, "UDP IDR via global encoder");
+    request_idr_sender(idr_tx);
+}
+
+/// Arm UDP video once PMTU is known, then force an IDR so the first
+/// datagrams the client can receive include a keyframe.
+async fn enable_udp_video(
+    sock: &UdpSocket,
+    addr: SocketAddr,
+    client: &mut UdpClient,
+    limits: UdpLimits,
+    displays: Option<&super::DisplayCtl>,
+    idr_tx: Option<&tokio::sync::mpsc::Sender<()>>,
+) {
+    let first = !client.announced;
+    announce_pmtu(sock, addr, client, limits).await;
+    if first && client.announced {
+        request_client_idr(displays, client.session.as_deref(), idr_tx).await;
     }
 }
 
