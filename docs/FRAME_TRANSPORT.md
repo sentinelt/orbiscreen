@@ -2,7 +2,7 @@
 
 # Frame Transport - Orbiscreen
 
-[![Version](https://img.shields.io/badge/version-0.25.3-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.29.0-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -66,7 +66,7 @@ flowchart LR
 5. **Client.**
    - First IDR on the reliable stream configures the decoder (Android: MediaCodec `csd-0`/`csd-1` from SPS/PPS; web: WebCodecs `avc1.…` from SPS) and calls `onReliableKeyframe()` so the datagram assembler treats the next P as the start of a GOP.
    - P-datagrams are reassembled (`DatagramAssembler` / `AuReorder`). In-order `seq` is fed to the decoder. A one-seq hole is held briefly (~48 ms) in case of reorder.
-6. **Idle.** Client ping ~500 ms. Android UDP expires after ~4–5 s silence. The last viewer of a session tears down that virtual output.
+6. **Idle.** Client ping ~500 ms. Android UDP expires after ~4-5 s silence. The last viewer of a session tears down that virtual output.
 
 On a clean LAN the picture is almost all P-datagrams after the join IDR. Intra-refresh keeps quality up without periodic keyframes.
 
@@ -79,7 +79,7 @@ Loss is **erasure of whole datagrams** (Wi-Fi A-MPDU, `send_to` failure, or `ORB
 ### Host send
 
 - A **Failed** datagram (loss hook or transient error) does **not** abort the rest of the AU. Only **TooBig** stops later fragments (they will not fit either). An incomplete send requests an IDR.
-- Keyframes are not put on datagrams, so a few percent loss no longer has to deliver a 20–40 fragment IDR intact.
+- Keyframes are not put on datagrams, so a few percent loss no longer has to deliver a 20-40 fragment IDR intact.
 
 ### Client hole
 
@@ -89,7 +89,7 @@ Loss is **erasure of whole datagrams** (Wi-Fi A-MPDU, `send_to` failure, or `ORB
 4. The host force-key-unit produces an IDR (+ SPS/PPS) and writes it on the **reliable** stream.
 5. The client decodes that IDR, calls `onReliableKeyframe()` (`lastSeq = -1`, drop held), then accepts the next P-datagram as the start of the new GOP.
 
-Without that reset, `lastSeq` stayed on the old GOP, every later P-frame looked like another hole, and the session locked at about 2–5 fps (IDR request rate).
+Without that reset, `lastSeq` stayed on the old GOP, every later P-frame looked like another hole, and the session locked at about 2-5 fps (IDR request rate).
 
 ### What a lost packet does *not* do
 
@@ -101,8 +101,8 @@ Without that reset, `lastSeq` stayed on the old GOP, every later P-frame looked 
 
 | Variable | Role |
 | --- | --- |
-| `ORBISCREEN_UDP_LOSS_PCT` | Drop that percent of outgoing UDP datagrams (0–90) |
+| `ORBISCREEN_UDP_LOSS_PCT` | Drop that percent of outgoing UDP datagrams (0-90) |
 | `ORBISCREEN_UDP_DROP_ABOVE` | Pretend larger datagrams were lost (PMTU) |
 | `ORBISCREEN_UDP_MAX_DATAGRAM` | Cap of the PMTU search |
 
-P-frame datagrams use systematic Cauchy Reed-Solomon over GF(256). `frags` is the data count k. Parity uses `frag >= frags`. Ladder: 1–3 → no FEC (a lost tiny AU is healed by intra-refresh on x264, or by the IDR-on-gap path on VA-API, which has no `intra-refresh` property); 4–16 → +2; 17–64 → +3; 65+ → +4. IDRs stay on the reliable stream and are not FEC'd. When FEC is on, the AU is prefixed with a 4-byte length so a reconstructed last shard can be trimmed.
+P-frame datagrams use systematic Cauchy Reed-Solomon over GF(256). `frags` is the data count k. Parity uses `frag >= frags`. Ladder: 1-3 → no FEC (a lost tiny AU is healed by intra-refresh on x264, or by the IDR-on-gap path on VA-API, which has no `intra-refresh` property); 4-16 → +2; 17-64 → +3; 65+ → +4. IDRs stay on the reliable stream and are not FEC'd. When FEC is on, the AU is prefixed with a 4-byte length so a reconstructed last shard can be trimmed.

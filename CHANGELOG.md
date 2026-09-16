@@ -2,20 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v0.29.0] - 2026-09-16
 
-### ✨ Added
-- **WebTransport Annex-B + WebCodecs web client**:
+Introduce WebTransport Annex-B web streaming with WebCodecs hardware decoding, one-frame VBV CBR rate control for ultra-low latency, reliable IDR and parameter set distribution with Reed-Solomon FEC for P-frame datagrams, robust Android client AU reordering and packet loss recovery, and bump the release matrix across all platforms.
+
+### ✨ Features
+- **WebTransport Annex-B and WebCodecs web client (#80 by @sentinelt)**:
   - Chromium opens WebTransport on `signaling_port + 2` (`wt_port`) with `serverCertificateHashes` and decodes Annex-B access units with `VideoDecoder` onto a canvas.
   - P-frames ride QUIC datagrams (unreliable). Hello, ping/pong, and IDR stay on the control stream. The same port serves the UI over HTTPS; HTTP `/` and `/client/` redirect there. Android keeps HTTP on `:8788`.
   - The self-signed certificate is stored in `$XDG_CONFIG_HOME/orbiscreen/wt-cert.pem` and `wt-key.pem` (`0o600`, parent `0o700`) and reused across restarts (14-day WebTransport cap).
-- **Reed-Solomon FEC on P-frame datagrams**:
-  - Systematic Cauchy RS over GF(256). Ladder: 1–3 fragments no FEC; 4–16 +2; 17–64 +3; 65+ +4. IDRs stay on the reliable stream.
-- **Reliable IDR + SPS/PPS**:
+- **Reed-Solomon FEC on P-frame datagrams (#80 by @sentinelt)**:
+  - Systematic Cauchy RS over GF(256). Ladder: 1-3 fragments no FEC; 4-16 +2; 17-64 +3; 65+ +4. IDRs stay on the reliable stream.
+- **Reliable IDR and SPS/PPS (#80 by @sentinelt)**:
   - Keyframes (SPS/PPS prepended when missing) go on the WebTransport control stream and on TCP `GET /idr` for Android. A reliable IDR resets the datagram assembler so the next P-frame starts a new GOP.
-- **One-frame VBV/CPB**:
+- **One-frame VBV/CPB rate control (#80 by @sentinelt)**:
   - Hardware and software H.264 encoders size the coded-picture buffer to one frame of the CBR target so a single IDR cannot occupy hundreds of milliseconds of wire time.
-- **Frame transport guide** (`docs/FRAME_TRANSPORT.md`): I/P/IDR/GOP terms, the AU split between datagrams and the reliable stream, and hold-until-IDR recovery.
+- **Frame transport guide (#80 by @sentinelt)**:
+  - Added comprehensive `docs/FRAME_TRANSPORT.md` documenting I/P/IDR/GOP terminology, AU datagram/reliable stream partitioning, and hold-until-IDR packet loss recovery.
 
 ### ⚡ Performance & Low Latency
 - HTTP MPEG-TS (`GET /stream`) keeps the encoder's infinite GOP: IDR on join, lag, and muxer failure, not every second.
@@ -23,11 +26,21 @@ All notable changes to this project will be documented in this file.
 - A failed UDP datagram no longer aborts the rest of that access unit; only `TooBig` stops the fragment loop.
 - Early P-frames after a one-sequence hole are reordered instead of immediately requesting an IDR.
 
-### 🐛 Fixed
-- **Quinn datagram send no longer aborts the daemon**: pin `quinn-proto` to 0.11.16 (0.11.17 double-subtracts dropped datagram bytes).
-- **Android no longer drops mid-GOP P-frames**:
-  - UDP `feedCodec` drains and retries a full input buffer, then holds until IDR. HTTP/ExoPlayer no longer drops late P-frames.
-- **Connect IDR is sent after the video path is live**, so the first keyframe is not encoded and dropped during DPLPMTUD.
+### 🐛 Bug Fixes
+- **Quinn datagram stability**: Pinned `quinn-proto` to 0.11.16 to prevent daemon aborts from dropped datagram double-subtraction.
+- **Android mid-GOP packet retention**: UDP `feedCodec` drains and retries full input buffers, holding until the next IDR instead of discarding mid-GOP P-frames. HTTP/ExoPlayer no longer drops late P-frames.
+- **Connect IDR pacing**: Connect IDR is sent after the video path is live so the initial keyframe is not lost during DPLPMTUD.
+
+### 📦 Packaging & Versions
+- **Workspace & Packaging**:
+  - Bumped Cargo workspace package version to `0.29.0`.
+  - Incremented Android client `versionCode` to `103`; updated `versionName` to `"0.29.0"`.
+  - Updated `tauri.conf.json` version to `0.29.0`.
+  - Bumped PKGBUILD `pkgver` to `0.29.0`.
+  - Added `0.29.0-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+  - Synchronized documentation badges across all architecture and specification guides.
+
+---
 
 ## [v0.28.9] - 2026-09-16
 

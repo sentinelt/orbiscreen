@@ -1,3 +1,14 @@
+orbiscreen (0.29.0-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.29.0 for Ubuntu noble.
+  * WebTransport Annex-B web client with WebCodecs hardware decoding.
+  * One-frame VBV rate control for ultra-low latency streaming.
+  * Reliable IDR stream with Reed-Solomon FEC for P-frame datagrams.
+  * Android client AU reordering and packet loss recovery.
+  * Bump version across workspace and packaging configurations.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 23:25:00 +0300
+
 orbiscreen (0.28.9-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.9 for Ubuntu noble.

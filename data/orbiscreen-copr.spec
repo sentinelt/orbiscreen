@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.28.9
+Version:        0.29.0
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +143,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.29.0-1
+- Release 0.29.0: WebTransport Annex-B web client with WebCodecs hardware decoding, one-frame VBV rate control for ultra-low latency, reliable IDR stream with Reed-Solomon FEC for P-frame datagrams, and Android AU reordering packet loss recovery (PR #80 by @sentinelt).
+
 * Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.9-1
 - Release 0.28.9: Merge PR #79 adding per-client KWin virtual outputs and isolated touch scoping for simultaneous multi-tablet streaming; introspect KWin input devices dynamically past event63; add automatic default session creation fallback in client_display for legacy client backwards compatibility; bump workspace release matrix.
 
