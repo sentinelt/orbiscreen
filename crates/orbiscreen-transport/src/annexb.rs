@@ -74,6 +74,36 @@ pub fn is_annexb(bytes: &[u8]) -> bool {
     start_code_len(bytes, 0).is_some()
 }
 
+/// Guarantee SPS/PPS sit in front of a key AU so a reliable-stream recovery
+/// frame is decodable on its own.
+pub fn with_parameter_sets(au: &[u8], cached: Option<&SpsPps>) -> Vec<u8> {
+    let found = extract_sps_pps(au);
+    if !found.sps.is_empty() && !found.pps.is_empty() {
+        return au.to_vec();
+    }
+    let Some(cached) = cached else {
+        return au.to_vec();
+    };
+    let sps = if found.sps.is_empty() {
+        cached.sps.as_slice()
+    } else {
+        found.sps.as_slice()
+    };
+    let pps = if found.pps.is_empty() {
+        cached.pps.as_slice()
+    } else {
+        found.pps.as_slice()
+    };
+    if sps.is_empty() || pps.is_empty() {
+        return au.to_vec();
+    }
+    let mut out = Vec::with_capacity(sps.len() + pps.len() + au.len());
+    out.extend_from_slice(sps);
+    out.extend_from_slice(pps);
+    out.extend_from_slice(au);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +149,27 @@ mod tests {
     fn annexb_probe() {
         assert!(is_annexb(&[0, 0, 0, 1, 0x65]));
         assert!(!is_annexb(&[0, 1, 0, 1]));
+    }
+
+    #[test]
+    fn with_parameter_sets_leaves_complete_idr_alone() {
+        let mut au = sample_sps();
+        au.extend_from_slice(&sample_pps());
+        au.extend_from_slice(&with_start_code(&[0x65, 0x88]));
+        assert_eq!(with_parameter_sets(&au, None), au);
+    }
+
+    #[test]
+    fn with_parameter_sets_prepends_cached_when_idr_lacks_headers() {
+        let slice = with_start_code(&[0x65, 0x88, 0x84]);
+        let cached = SpsPps {
+            sps: sample_sps(),
+            pps: sample_pps(),
+        };
+        let out = with_parameter_sets(&slice, Some(&cached));
+        let found = extract_sps_pps(&out);
+        assert_eq!(found.sps, sample_sps());
+        assert_eq!(found.pps, sample_pps());
+        assert!(out.ends_with(&slice));
     }
 }

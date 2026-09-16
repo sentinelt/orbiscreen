@@ -80,6 +80,7 @@ class PlayerHolder(
     val player: StateFlow<ExoPlayer?> get() = _player
     private val _udp = MutableStateFlow<UdpPlayer?>(null)
     val udpPlayer: StateFlow<UdpPlayer?> get() = _udp
+    val stats = StreamStats()
 
     private var reconnectJob: Job? = null
     private var reconnectDelayMs = 1_000L
@@ -145,6 +146,7 @@ class PlayerHolder(
             retryCount = 0
         }
         lastTarget = StreamTarget(host, port, tokenProvider, session)
+        stats.reset()
 
         val token = try {
             tokenProvider()
@@ -171,9 +173,9 @@ class PlayerHolder(
         val streamW = session?.width ?: info?.width ?: 1920
         val streamH = session?.height ?: info?.height ?: 1080
         if (udpPort in 1..65535 && host != "127.0.0.1" && host != "localhost") {
-            val udp = UdpPlayer()
+            val udp = UdpPlayer(stats)
             val started = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                udp.start(host, udpPort, token, streamW, streamH, session?.id)
+                udp.start(host, udpPort, token, streamW, streamH, session?.id, port)
             }
             if (started) {
                 _udp.value = udp
@@ -192,6 +194,31 @@ class PlayerHolder(
                     if (token.isNotBlank()) mapOf("Authorization" to "Bearer $token") else emptyMap()
                 )
             val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+                .setTransferListener(object : androidx.media3.datasource.TransferListener {
+                    override fun onTransferInitializing(
+                        source: androidx.media3.datasource.DataSource,
+                        dataSpec: androidx.media3.datasource.DataSpec,
+                        isNetwork: Boolean,
+                    ) {}
+                    override fun onTransferStart(
+                        source: androidx.media3.datasource.DataSource,
+                        dataSpec: androidx.media3.datasource.DataSpec,
+                        isNetwork: Boolean,
+                    ) {}
+                    override fun onBytesTransferred(
+                        source: androidx.media3.datasource.DataSource,
+                        dataSpec: androidx.media3.datasource.DataSpec,
+                        isNetwork: Boolean,
+                        bytesTransferred: Int,
+                    ) {
+                        if (bytesTransferred > 0) stats.noteBytes(bytesTransferred.toLong())
+                    }
+                    override fun onTransferEnd(
+                        source: androidx.media3.datasource.DataSource,
+                        dataSpec: androidx.media3.datasource.DataSpec,
+                        isNetwork: Boolean,
+                    ) {}
+                })
 
             val extractorsFactory = DefaultExtractorsFactory()
                 .setTsExtractorFlags(
@@ -365,7 +392,12 @@ class PlayerHolder(
                         enableDecoderFallback,
                         eventHandler,
                         eventListener,
-                    ) { requestIdr() },
+                        onLagDetected = {
+                            stats.noteDropped()
+                            requestIdr()
+                        },
+                        onFramePresented = { ptsUs -> stats.notePresentedPts(ptsUs) },
+                    ),
                 )
             }
         }
@@ -420,14 +452,16 @@ class PlayerHolder(
     fun onAppForegrounded() {
         val wasBackgrounded = isBackgrounded
         isBackgrounded = false
-        if (wasBackgrounded) {
-            val p = _player.value
-            if (p != null && p.playbackState != Player.STATE_IDLE && p.playerError == null) {
-                p.playWhenReady = true
-            } else {
-                lastTarget?.let { target ->
-                    retry(target.host, target.port, target.tokenProvider)
-                }
+        if (!wasBackgrounded) return
+        // UDP stays on its own socket; tearing it down here is what a USB
+        // permission dialog (or any other overlay Activity) used to do.
+        if (_udp.value != null) return
+        val p = _player.value
+        if (p != null && p.playbackState != Player.STATE_IDLE && p.playerError == null) {
+            p.playWhenReady = true
+        } else {
+            lastTarget?.let { target ->
+                retry(target.host, target.port, target.tokenProvider)
             }
         }
     }
@@ -458,6 +492,7 @@ private class LowLatencyVideoRenderer(
     eventHandler: Handler,
     eventListener: VideoRendererEventListener,
     private val onLagDetected: () -> Unit,
+    private val onFramePresented: (presentationTimeUs: Long) -> Unit,
 ) : MediaCodecVideoRenderer(
     context,
     mediaCodecSelector,
@@ -488,6 +523,11 @@ private class LowLatencyVideoRenderer(
         return config
     }
 
+    override fun onProcessedOutputBuffer(presentationTimeUs: Long) {
+        super.onProcessedOutputBuffer(presentationTimeUs)
+        onFramePresented(presentationTimeUs)
+    }
+
     override fun shouldDropBuffersToKeyframe(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
         if (earlyUs < -300_000) {
             onLagDetected()
@@ -496,6 +536,9 @@ private class LowLatencyVideoRenderer(
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        return earlyUs < -250_000
+        // Never drop a single late P-frame. Infinite GOP has no intra-refresh
+        // on vah264enc; a hole stays as block artifacts until the next IDR.
+        // Deep lag still snaps to a keyframe via shouldDropBuffersToKeyframe.
+        return false
     }
 }

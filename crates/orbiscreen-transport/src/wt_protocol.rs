@@ -161,11 +161,11 @@ pub fn fragment_video_datagrams(
     if pkt.bytes.is_empty() {
         return Vec::new();
     }
-    let chunk = datagram_payload_size(max_datagram);
-    let parts: Vec<&[u8]> = pkt.bytes.chunks(chunk).collect();
-    let frags = parts.len() as u16;
-    parts
-        .into_iter()
+    let shards = super::fec::shard_au(&pkt.bytes, datagram_payload_size(max_datagram));
+    let frags = shards.data.len() as u16;
+    let mut out: Vec<Vec<u8>> = shards
+        .data
+        .iter()
         .enumerate()
         .map(|(i, part)| {
             encode_video_datagram(
@@ -178,11 +178,43 @@ pub fn fragment_video_datagrams(
                 part,
             )
         })
-        .collect()
+        .collect();
+    for (i, par) in shards.parity.iter().enumerate() {
+        out.push(encode_video_datagram(
+            seq,
+            frags + i as u16,
+            frags,
+            pkt.is_keyframe,
+            pkt.pts_ns,
+            sent_ns,
+            par,
+        ));
+    }
+    out
 }
 
 pub fn seq_delta(cur: u16, prev: u16) -> u16 {
     cur.wrapping_sub(prev)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoCarrier {
+    Reliable,
+    Datagram,
+}
+
+/// IDR (and SPS/PPS sitting on that AU) go on a reliable stream.
+/// P-frames stay on datagrams so a late frame can still be dropped.
+pub fn video_carrier(is_keyframe: bool, datagrams_ok: bool) -> VideoCarrier {
+    if is_keyframe || !datagrams_ok {
+        VideoCarrier::Reliable
+    } else {
+        VideoCarrier::Datagram
+    }
+}
+
+pub fn advance_datagram_seq(is_keyframe: bool) -> bool {
+    !is_keyframe
 }
 
 pub fn encode_video(pkt: &H264Packet, sent_ns: u64) -> Result<Vec<u8>, CodecError> {
@@ -398,6 +430,28 @@ mod tests {
     }
 
     #[test]
+    fn fec_parity_is_appended_and_not_counted_in_frags() {
+        let chunk = datagram_payload_size(DEFAULT_DATAGRAM);
+        let pkt = H264Packet {
+            bytes: vec![3u8; chunk * 4],
+            is_keyframe: false,
+            pts_ns: 1,
+        };
+        let dgrams = fragment_video_datagrams(7, &pkt, 2, DEFAULT_DATAGRAM);
+        let parsed: Vec<_> = dgrams
+            .iter()
+            .map(|d| parse_video_datagram(d).unwrap())
+            .collect();
+        assert_eq!(parsed[0].frags, 5); // 4*chunk + 4-byte length prefix
+        let k = parsed[0].frags as usize;
+        let m = crate::fec::parity_count(k);
+        assert_eq!(parsed.len(), k + m);
+        assert!(parsed.iter().take(k).all(|p| (p.frag as usize) < k));
+        assert!(parsed.iter().skip(k).all(|p| (p.frag as usize) >= k));
+        assert!(parsed.iter().all(|p| p.frags as usize == k));
+    }
+
+    #[test]
     fn datagram_rejects_truncated_and_wrong_type() {
         assert!(parse_video_datagram(&[TYPE_VIDEO, 1, 0, 0]).is_none());
         assert!(parse_video_datagram(&encode_ctrl(TYPE_IDR).unwrap()).is_none());
@@ -407,6 +461,28 @@ mod tests {
     fn seq_delta_wraps() {
         assert_eq!(seq_delta(1, 0), 1);
         assert_eq!(seq_delta(0, 65535), 1);
+    }
+
+    #[test]
+    fn keyframe_uses_reliable_carrier_when_datagrams_exist() {
+        assert_eq!(video_carrier(true, true), VideoCarrier::Reliable);
+    }
+
+    #[test]
+    fn p_frame_uses_datagram_when_peer_has_datagrams() {
+        assert_eq!(video_carrier(false, true), VideoCarrier::Datagram);
+    }
+
+    #[test]
+    fn everything_is_reliable_without_datagrams() {
+        assert_eq!(video_carrier(true, false), VideoCarrier::Reliable);
+        assert_eq!(video_carrier(false, false), VideoCarrier::Reliable);
+    }
+
+    #[test]
+    fn datagram_seq_does_not_advance_for_reliable_keyframes() {
+        assert!(!advance_datagram_seq(true));
+        assert!(advance_datagram_seq(false));
     }
 
     #[test]

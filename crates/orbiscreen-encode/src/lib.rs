@@ -139,6 +139,49 @@ fn set_str_if_present(el: &gstreamer::Element, name: &str, value: &str) {
     }
 }
 
+fn set_u32_if_present(el: &gstreamer::Element, name: &str, value: u32) {
+    let Some(spec) = el.find_property(name) else {
+        return;
+    };
+    if spec.downcast_ref::<glib::ParamSpecUInt>().is_some() {
+        el.set_property(name, value);
+    } else if spec.downcast_ref::<glib::ParamSpecInt>().is_some() {
+        el.set_property(name, value.min(i32::MAX as u32) as i32);
+    } else {
+        el.set_property_from_str(name, &value.to_string());
+    }
+}
+
+/// One frame of CBR, in milliseconds of VBV (`x264enc` `vbv-buf-capacity`).
+fn one_frame_vbv_ms(framerate: u32) -> u32 {
+    let fps = framerate.max(1);
+    1000u32.div_ceil(fps)
+}
+
+/// One frame of CBR, in kilobits (`vah264enc` `cpb-size`, `nvh264enc` `vbv-buffer-size`).
+fn one_frame_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
+    let fps = framerate.max(1);
+    bitrate_kbps.max(1).div_ceil(fps).max(1)
+}
+
+/// Cap VBV/CPB at one frame so a picture cannot occupy more than one frame-time of wire.
+///
+/// Unset, `x264enc` defaults to 600 ms and `vah264enc` auto-sizes ~1 s — at 8 Mbps that
+/// lets one IDR occupy hundreds of milliseconds on the air. `rc-lookahead` is forced to
+/// 0 so NVENC does not add a second delay on top of the buffer.
+fn configure_one_frame_vbv(encoder: &gstreamer::Element, bitrate_kbps: u32, framerate: u32) {
+    let vbv_ms = one_frame_vbv_ms(framerate);
+    let vbv_kb = one_frame_vbv_kb(bitrate_kbps, framerate);
+    set_u32_if_present(encoder, "vbv-buf-capacity", vbv_ms);
+    set_u32_if_present(encoder, "cpb-size", vbv_kb);
+    set_u32_if_present(encoder, "vbv-buffer-size", vbv_kb);
+    set_u32_if_present(encoder, "rc-lookahead", 0);
+    info!(
+        vbv_ms,
+        vbv_kb, bitrate_kbps, framerate, "capped VBV/CPB at one frame"
+    );
+}
+
 fn max_u32_property(el: &gstreamer::Element, name: &str) -> Option<u32> {
     let spec = el.find_property(name)?;
     spec.downcast_ref::<glib::ParamSpecUInt>()
@@ -173,7 +216,7 @@ fn configure_infinite_gop(encoder: &gstreamer::Element) {
         .find_property("min-force-key-unit-interval")
         .is_some()
     {
-        encoder.set_property("min-force-key-unit-interval", 100_000_000u64);
+        encoder.set_property("min-force-key-unit-interval", 250_000_000u64);
     }
 }
 
@@ -343,6 +386,7 @@ impl Encoder {
                 encoder.set_property_from_str("bframes", "0");
             }
         }
+        configure_one_frame_vbv(&encoder, params.bitrate_kbps, params.framerate);
         configure_infinite_gop(&encoder);
 
         let h264parse = make_element("h264parse")?;
@@ -657,6 +701,23 @@ mod tests {
     }
 
     #[test]
+    fn intra_refresh_exists_only_on_x264() {
+        init().unwrap();
+        let x264 = make_element("x264enc").unwrap();
+        assert!(
+            x264.find_property("intra-refresh").is_some(),
+            "x264enc must expose intra-refresh for 1–3 datagram healing"
+        );
+        if element_available("vah264enc") {
+            let va = make_element("vah264enc").unwrap();
+            assert!(
+                va.find_property("intra-refresh").is_none(),
+                "vah264enc unexpectedly grew intra-refresh; update FEC docs"
+            );
+        }
+    }
+
+    #[test]
     fn infinite_gop_uses_property_maximum() {
         init().unwrap();
         let encoder = match make_element("x264enc") {
@@ -666,6 +727,113 @@ mod tests {
         configure_infinite_gop(&encoder);
         assert!(encoder.property::<bool>("intra-refresh"));
         assert!(encoder.property::<u32>("key-int-max") > 60);
+    }
+
+    fn try_live_encoder(kind: EncoderKind) -> Option<Encoder> {
+        match Encoder::new(EncodeParams {
+            kind,
+            bitrate_kbps: 8000,
+            width: 64,
+            height: 64,
+            framerate: 60,
+        }) {
+            Ok(enc) => Some(enc),
+            Err(e) => {
+                eprintln!("Skipping: no H.264 encoder available: {e}");
+                None
+            }
+        }
+    }
+
+    fn assert_live_one_frame_vbv(enc: &Encoder) {
+        let want_ms = one_frame_vbv_ms(60);
+        let want_kb = one_frame_vbv_kb(8000, 60);
+        if enc.encoder.find_property("vbv-buf-capacity").is_some() {
+            let got = enc.encoder.property::<u32>("vbv-buf-capacity");
+            assert_ne!(
+                got, 600,
+                "Encoder::new left x264enc on the 600 ms default VBV"
+            );
+            assert_eq!(got, want_ms);
+        }
+        if enc.encoder.find_property("cpb-size").is_some() {
+            let got = enc.encoder.property::<u32>("cpb-size");
+            assert_ne!(got, 0, "Encoder::new left vah264enc cpb-size at auto (0)");
+            // Intel vah264enc accepts the one-frame request in NULL, then
+            // reclamps CPB to ~2 s of bitrate once PLAYING. The write is
+            // still covered below; do not fail the live encoder on the clamp.
+            if got != want_kb {
+                assert!(
+                    got >= want_kb,
+                    "vah264enc cpb-size {got} is below one-frame {want_kb}"
+                );
+            }
+        }
+        if enc.encoder.find_property("vbv-buffer-size").is_some() {
+            let got = enc.encoder.property::<u32>("vbv-buffer-size");
+            assert_ne!(
+                got, 0,
+                "Encoder::new left nvh264enc vbv-buffer-size at NVENC default (0)"
+            );
+            assert_eq!(got, want_kb);
+        }
+    }
+
+    #[test]
+    fn one_frame_vbv_is_bitrate_over_fps() {
+        assert_eq!(one_frame_vbv_ms(60), 17);
+        assert_eq!(one_frame_vbv_ms(30), 34);
+        assert_eq!(one_frame_vbv_ms(1), 1000);
+        assert_eq!(one_frame_vbv_ms(0), 1000);
+        assert_eq!(one_frame_vbv_kb(8000, 60), 134);
+        assert_eq!(one_frame_vbv_kb(8000, 30), 267);
+        assert_eq!(one_frame_vbv_kb(1000, 60), 17);
+        assert_eq!(one_frame_vbv_kb(0, 60), 1);
+    }
+
+    #[test]
+    fn configure_one_frame_vbv_writes_cpb_before_playing() {
+        init().unwrap();
+        let Ok(enc) = make_element("vah264enc") else {
+            return;
+        };
+        configure_one_frame_vbv(&enc, 8000, 60);
+        assert_eq!(enc.property::<u32>("cpb-size"), 134);
+    }
+
+    #[test]
+    fn x264_encoder_new_caps_vbv_at_one_frame() {
+        init().unwrap();
+        let Some(enc) = try_live_encoder(EncoderKind::X264) else {
+            return;
+        };
+        assert_eq!(enc.kind(), EncoderKind::X264);
+        assert_live_one_frame_vbv(&enc);
+        enc.stop();
+    }
+
+    #[test]
+    fn vaapi_encoder_new_caps_cpb_at_one_frame() {
+        init().unwrap();
+        if !element_available("vah264enc") && !element_available("vaapih264enc") {
+            return;
+        }
+        let Some(enc) = try_live_encoder(EncoderKind::Vaapi) else {
+            return;
+        };
+        assert_eq!(enc.kind(), EncoderKind::Vaapi);
+        assert_live_one_frame_vbv(&enc);
+        enc.stop();
+    }
+
+    #[test]
+    fn auto_encoder_new_caps_vbv_at_one_frame() {
+        init().unwrap();
+        let Some(enc) = try_live_encoder(EncoderKind::Auto) else {
+            return;
+        };
+        assert_live_one_frame_vbv(&enc);
+        enc.stop();
     }
 
     #[test]

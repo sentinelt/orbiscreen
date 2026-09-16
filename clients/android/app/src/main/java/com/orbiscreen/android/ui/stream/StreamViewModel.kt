@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.orbiscreen.android.data.PrefsStore
 import com.orbiscreen.android.input.InputDispatcher
 import com.orbiscreen.android.net.HostApi
+import com.orbiscreen.android.player.Idr
 import com.orbiscreen.android.player.PlayerHolder
 import com.orbiscreen.android.player.StreamEvent
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +49,7 @@ class StreamViewModel(
     private var sessionToken: String? = null
     private var displaySessionId: String? = null
     private var lastIdrAtMs = 0L
+    private var waitingForKeyframe = false
 
     private fun scaleModeFromPref(pref: String): Int = when (pref) {
         "fill" -> 3
@@ -67,6 +69,7 @@ class StreamViewModel(
 
     val player get() = playerHolder.player
     val udpPlayer get() = playerHolder.udpPlayer
+    val streamStats get() = playerHolder.stats
 
     fun detectNativeDisplay(): Triple<Int, Int, Int> {
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
@@ -111,7 +114,24 @@ class StreamViewModel(
         viewModelScope.launch {
             playerHolder.event.collect { ev ->
                 _state.value = _state.value.copy(event = ev)
-                if (ev is StreamEvent.Error) {
+                when (ev) {
+                    is StreamEvent.Playing -> waitingForKeyframe = false
+                    is StreamEvent.Error -> {
+                        waitingForKeyframe = true
+                        requestIdr()
+                    }
+                    is StreamEvent.Connecting, is StreamEvent.Buffering ->
+                        waitingForKeyframe = true
+                    is StreamEvent.Disconnected, is StreamEvent.Idle ->
+                        waitingForKeyframe = false
+                    else -> {}
+                }
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                delay(Idr.DEBOUNCE_MS)
+                if (waitingForKeyframe && playerHolder.udpPlayer.value == null) {
                     requestIdr()
                 }
             }
@@ -198,8 +218,14 @@ class StreamViewModel(
     }
 
     private fun requestIdr() {
+        waitingForKeyframe = true
+        val udp = playerHolder.udpPlayer.value
+        if (udp != null) {
+            udp.requestIdr()
+            return
+        }
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastIdrAtMs < 250L) return
+        if (!Idr.due(now, lastIdrAtMs)) return
         lastIdrAtMs = now
         ensureInput().control("idr")
     }
@@ -219,6 +245,8 @@ class StreamViewModel(
             }
             inputDispatcher = it
         }
+        // Session is opened in init before the surface calls ensureInput.
+        // Always refresh so /input is not dropped when several displays exist.
         dispatcher.sessionId = displaySessionId
         sessionToken?.let { dispatcher.updateToken(it) }
         dispatcher.resize(state.value.displayWidth, state.value.displayHeight)

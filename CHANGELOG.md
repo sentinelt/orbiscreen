@@ -9,9 +9,25 @@ All notable changes to this project will be documented in this file.
   - Chromium opens WebTransport on `signaling_port + 2` (`wt_port`) with `serverCertificateHashes` and decodes Annex-B access units with `VideoDecoder` onto a canvas.
   - P-frames ride QUIC datagrams (unreliable). Hello, ping/pong, and IDR stay on the control stream. The same port serves the UI over HTTPS; HTTP `/` and `/client/` redirect there. Android keeps HTTP on `:8788`.
   - The self-signed certificate is stored in `$XDG_CONFIG_HOME/orbiscreen/wt-cert.pem` and `wt-key.pem` (`0o600`, parent `0o700`) and reused across restarts (14-day WebTransport cap).
+- **Reed-Solomon FEC on P-frame datagrams**:
+  - Systematic Cauchy RS over GF(256). Ladder: 1–3 fragments no FEC; 4–16 +2; 17–64 +3; 65+ +4. IDRs stay on the reliable stream.
+- **Reliable IDR + SPS/PPS**:
+  - Keyframes (SPS/PPS prepended when missing) go on the WebTransport control stream and on TCP `GET /idr` for Android. A reliable IDR resets the datagram assembler so the next P-frame starts a new GOP.
+- **One-frame VBV/CPB**:
+  - Hardware and software H.264 encoders size the coded-picture buffer to one frame of the CBR target so a single IDR cannot occupy hundreds of milliseconds of wire time.
+- **Frame transport guide** (`docs/FRAME_TRANSPORT.md`): I/P/IDR/GOP terms, the AU split between datagrams and the reliable stream, and hold-until-IDR recovery.
+
+### ⚡ Performance & Low Latency
+- HTTP MPEG-TS (`GET /stream`) keeps the encoder's infinite GOP: IDR on join, lag, and muxer failure, not every second.
+- IDR requests are debounced to 250 ms on HTTP, UDP, and WebTransport until a keyframe arrives.
+- A failed UDP datagram no longer aborts the rest of that access unit; only `TooBig` stops the fragment loop.
+- Early P-frames after a one-sequence hole are reordered instead of immediately requesting an IDR.
 
 ### 🐛 Fixed
 - **Quinn datagram send no longer aborts the daemon**: pin `quinn-proto` to 0.11.16 (0.11.17 double-subtracts dropped datagram bytes).
+- **Android no longer drops mid-GOP P-frames**:
+  - UDP `feedCodec` drains and retries a full input buffer, then holds until IDR. HTTP/ExoPlayer no longer drops late P-frames.
+- **Connect IDR is sent after the video path is live**, so the first keyframe is not encoded and dropped during DPLPMTUD.
 
 ## [v0.28.9] - 2026-09-16
 
