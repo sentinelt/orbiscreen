@@ -10,7 +10,7 @@ const I18N = {
         btnHideControls: "Hide Toolbar",
         btnFullscreen: "Fullscreen",
         btnDisconnect: "Disconnect",
-        btnRestoreToolbar: "Show Toolbar",
+        btnShowControls: "Menu",
         btnCloseKeyboard: "Close",
         settingsTitle: "Settings",
         themeTitle: "Theme",
@@ -48,7 +48,9 @@ const I18N = {
         toastLockSent: "Lock sent",
         toastCadSent: "Ctrl+Alt+Del sent",
         toastResynced: "Resynced",
-        toastDisconnected: "Disconnected"
+        toastDisconnected: "Disconnected",
+        statusUnsupported: "Unsupported browser",
+        statusUnsupportedSub: "This client needs the WebCodecs VideoDecoder API. Open the page in Chrome, Brave, Edge, or another Chromium browser."
     },
     ar: {
         btnInputMode: "وضع الإدخال",
@@ -95,7 +97,9 @@ const I18N = {
         toastLockSent: "تم إرسال أمر القفل",
         toastCadSent: "تم إرسال Ctrl+Alt+Del",
         toastResynced: "تمت المزامنة",
-        toastDisconnected: "تم قطع الاتصال"
+        toastDisconnected: "تم قطع الاتصال",
+        statusUnsupported: "متصفح غير مدعوم",
+        statusUnsupportedSub: "يحتاج هذا العميل إلى WebCodecs VideoDecoder. افتح الصفحة في Chrome أو Brave أو Edge أو متصفح Chromium آخر."
     }
 };
 
@@ -183,10 +187,9 @@ const stageEl = document.getElementById("stage");
 const videoEl = document.getElementById("remoteVideo");
 const touchIndicator = document.getElementById("touchIndicator");
 const controlToolbar = document.getElementById("controlToolbar");
-const miniPill = document.getElementById("miniPill");
+const btnShowControls = document.getElementById("btnShowControls");
 const hostNameEl = document.getElementById("hostName");
 const hostInfoEl = document.getElementById("hostInfo");
-const miniInfoEl = document.getElementById("miniInfo");
 
 function setOverlayState(state, title, subtitle) {
     if (overlayEl) overlayEl.classList.remove("hidden");
@@ -194,14 +197,17 @@ function setOverlayState(state, title, subtitle) {
     if (statusSubtitle && subtitle) statusSubtitle.textContent = subtitle;
 
     releaseControl();
-    if (controlToolbar) controlToolbar.classList.add("hidden");
-    if (miniPill) miniPill.classList.add("hidden");
+    hideControlsChrome();
     if (keyboardDrawer) keyboardDrawer.classList.add("hidden");
     if (settingsModal) settingsModal.classList.add("hidden");
 
     if (state === "connecting") {
         if (brandLogo) brandLogo.classList.add("hidden");
         if (statusSpinner) statusSpinner.classList.remove("hidden");
+        if (btnReconnect) btnReconnect.classList.add("hidden");
+    } else if (state === "unsupported") {
+        if (statusSpinner) statusSpinner.classList.add("hidden");
+        if (brandLogo) brandLogo.classList.remove("hidden");
         if (btnReconnect) btnReconnect.classList.add("hidden");
     } else {
         if (statusSpinner) statusSpinner.classList.add("hidden");
@@ -248,16 +254,25 @@ let displayWidth = 1920;
 let displayHeight = 1080;
 let encoderName = "NVENC";
 let authToken = "";
-let mpegtsPlayer = null;
+let wtConfig = null;
+let wtTransport = null;
+let wtWriter = null;
+let videoDecoder = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 10000;
+let clockOffsetNs = 0n;
+let lastFrameAt = 0;
 let streamActive = false;
 let isVncFocused = false;
 let isTouchMode = true;
 let toastTimer = null;
 let vncBannerTimer = null;
 let latencyWatchdog = null;
+let lastDelayMs = null;
+let controlsVisible = false;
+let controlsLockedHidden = false;
+let controlsHideTimer = null;
 const heldKeys = new Set();
 const pressedButtons = new Set();
 const activeTouches = new Map();
@@ -284,12 +299,56 @@ function showToast(text, duration = 2200) {
     }, duration);
 }
 
+window.addEventListener("resize", () => updateInfoDisplay());
+
 function updateInfoDisplay() {
-    const infoStr = `${displayWidth}×${displayHeight}  ${encoderName}`;
+    const delayText = (lastDelayMs != null && lastDelayMs >= 0)
+        ? `delay ${lastDelayMs}ms`
+        : "delay —";
+    const narrow = window.matchMedia("(orientation: portrait), (max-width: 720px)").matches;
+    const infoStr = narrow
+        ? delayText
+        : `${displayWidth}×${displayHeight}  ${encoderName}  ${delayText}`;
     if (hostInfoEl) hostInfoEl.textContent = infoStr;
-    if (miniInfoEl) miniInfoEl.textContent = `${displayWidth}×${displayHeight}`;
     if (statRes) statRes.textContent = `${displayWidth} × ${displayHeight}`;
     if (statEncoder) statEncoder.textContent = encoderName;
+    if (statLatency) {
+        statLatency.textContent = (lastDelayMs != null && lastDelayMs >= 0)
+            ? `${lastDelayMs} ms`
+            : "-- ms";
+    }
+}
+
+function hideControlsChrome() {
+    clearTimeout(controlsHideTimer);
+    controlsHideTimer = null;
+    controlsVisible = false;
+    if (controlToolbar) controlToolbar.classList.add("hidden");
+    if (btnShowControls) btnShowControls.classList.add("hidden");
+}
+
+function setControlsVisible(visible) {
+    clearTimeout(controlsHideTimer);
+    controlsHideTimer = null;
+    if (!streamActive) {
+        hideControlsChrome();
+        return;
+    }
+    if (controlsLockedHidden) {
+        if (controlToolbar) controlToolbar.classList.add("hidden");
+        if (btnShowControls) btnShowControls.classList.add("hidden");
+        controlsVisible = false;
+        return;
+    }
+    controlsVisible = visible;
+    if (visible) {
+        if (controlToolbar) controlToolbar.classList.remove("hidden");
+        if (btnShowControls) btnShowControls.classList.add("hidden");
+        controlsHideTimer = setTimeout(() => setControlsVisible(false), 12_000);
+    } else {
+        if (controlToolbar) controlToolbar.classList.add("hidden");
+        if (btnShowControls) btnShowControls.classList.remove("hidden");
+    }
 }
 
 function setVncFocus(focused) {
@@ -594,7 +653,7 @@ document.querySelectorAll(".chipBtn[data-fit]").forEach((btn) => {
     btn.addEventListener("click", () => {
         document.querySelectorAll(".chipBtn[data-fit]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-        videoEl.style.objectFit = btn.dataset.fit;
+        if (videoEl) videoEl.style.objectFit = btn.dataset.fit;
         showToast(`Fit: ${btn.textContent}`);
     });
 });
@@ -630,19 +689,25 @@ document.querySelectorAll("#webLangChips .chipBtn").forEach((btn) => {
 if (btnHideControls) {
     btnHideControls.addEventListener("click", (e) => {
         e.stopPropagation();
-        controlToolbar.classList.add("hidden");
-        miniPill.classList.remove("hidden");
+        controlsLockedHidden = true;
+        setControlsVisible(false);
         showToast(t("controlsHidden"), 1800);
     });
 }
 
-if (btnRestoreToolbar) {
-    btnRestoreToolbar.addEventListener("click", (e) => {
+if (btnShowControls) {
+    btnShowControls.addEventListener("click", (e) => {
         e.stopPropagation();
-        miniPill.classList.add("hidden");
-        controlToolbar.classList.remove("hidden");
+        setControlsVisible(true);
     });
 }
+
+stageEl.addEventListener("dblclick", (e) => {
+    if (!streamActive || !controlsLockedHidden) return;
+    e.preventDefault();
+    controlsLockedHidden = false;
+    setControlsVisible(true);
+});
 
 if (btnFullscreen) {
     btnFullscreen.addEventListener("click", (e) => {
@@ -671,6 +736,26 @@ async function sendHostAction(action, extra = {}) {
     }
 }
 
+const IDR_DEBOUNCE_MS = 250;
+let lastIdrAt = 0;
+let waitingForKeyframe = false;
+
+function noteKeyframe() {
+    waitingForKeyframe = false;
+}
+
+function requestIdr(opts = {}) {
+    const now = Date.now();
+    if (now - lastIdrAt < IDR_DEBOUNCE_MS) return false;
+    lastIdrAt = now;
+    if (!opts.keepDecoding) waitingForKeyframe = true;
+    if (wtWriter) {
+        try { wtWriter.write(OrbiAnnexB.encodeCtrl(OrbiAnnexB.TYPE_IDR)); } catch (_) {}
+    }
+    sendHostAction("idr", displaySessionId ? { session: displaySessionId } : {});
+    return true;
+}
+
 if (btnLock) {
     btnLock.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -692,6 +777,7 @@ if (btnActionResync) {
     btnActionResync.addEventListener("click", (e) => {
         e.stopPropagation();
         settingsModal.classList.add("hidden");
+        requestIdr();
         startStream();
         showToast(t("toastResynced"));
     });
@@ -767,7 +853,7 @@ function sendWheel(deltaY) {
 }
 
 function normalizeWheel(event) {
-    const vh = videoEl.videoHeight || displayHeight;
+    const vh = (videoEl && (videoEl.videoHeight || videoEl.height)) || displayHeight;
     let pixels = event.deltaY;
     if (event.deltaMode === 1) pixels *= 16;
     else if (event.deltaMode === 2) pixels *= vh;
@@ -998,9 +1084,10 @@ if (keyboardImeInput) {
 }
 
 function mapPointer(event) {
-    const rect = videoEl.getBoundingClientRect();
-    const vw = videoEl.videoWidth || displayWidth;
-    const vh = videoEl.videoHeight || displayHeight;
+    const target = videoEl;
+    const rect = target.getBoundingClientRect();
+    const vw = target.videoWidth || target.width || displayWidth;
+    const vh = target.videoHeight || target.height || displayHeight;
     const scale = Math.min(rect.width / vw, rect.height / vh);
     const offsetX = (rect.width - vw * scale) / 2;
     const offsetY = (rect.height - vh * scale) / 2;
@@ -1022,9 +1109,28 @@ function hideTouch() {
     if (touchIndicator) touchIndicator.classList.add("hidden");
 }
 
-function canPlayMpegTs() {
-    return typeof mpegts !== "undefined"
-        && mpegts.getFeatureList().mseLivePlayback;
+function playbackSupport() {
+    return {
+        webTransport: typeof WebTransport === "function",
+        videoDecoder: typeof VideoDecoder === "function",
+        annexb: typeof OrbiAnnexB !== "undefined",
+    };
+}
+
+function canPlayWebTransport() {
+    const s = playbackSupport();
+    return s.webTransport && s.annexb && s.videoDecoder;
+}
+
+function unsupportedPlayback() {
+    setOverlayState("unsupported", t("statusUnsupported"), t("statusUnsupportedSub"));
+}
+
+function closeDecoder() {
+    if (videoDecoder) {
+        try { videoDecoder.close(); } catch (_) {}
+        videoDecoder = null;
+    }
 }
 
 function destroyPlayer() {
@@ -1032,15 +1138,15 @@ function destroyPlayer() {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
     }
-    if (mpegtsPlayer) {
-        mpegtsPlayer.destroy();
-        mpegtsPlayer = null;
+    if (wtWriter) {
+        try { wtWriter.close(); } catch (_) {}
+        wtWriter = null;
     }
-    if (videoEl.src) {
-        videoEl.pause();
-        videoEl.removeAttribute("src");
-        videoEl.load();
+    if (wtTransport) {
+        try { wtTransport.close(); } catch (_) {}
+        wtTransport = null;
     }
+    closeDecoder();
     streamActive = false;
     clearInterval(latencyWatchdog);
     releaseControl();
@@ -1072,95 +1178,343 @@ function scheduleReconnect(reason) {
         reconnectTimer = null;
         (async () => {
             await refreshToken();
-            await openDisplaySession();
+            const sessionGone = !displaySessionId
+                || /close|attach|session|no display/i.test(String(reason || ""));
+            if (sessionGone) {
+                displaySessionId = "";
+                await openDisplaySession();
+            }
             startStream();
         })().catch((error) => {
             console.warn("reconnect attempt failed:", error);
+            displaySessionId = "";
             scheduleReconnect("retry error");
         });
     }, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
 }
 
-function startStream() {
-    if (!canPlayMpegTs()) {
-        setOverlayState("error", "Playback Error", "Browser lacks MSE live video playback support");
+function markPlaying() {
+    if (!streamActive) {
+        streamActive = true;
+        reconnectDelay = 1000;
+        controlsLockedHidden = false;
+        if (overlayEl) overlayEl.classList.add("hidden");
+        setControlsVisible(false);
+    }
+    noteKeyframe();
+    lastFrameAt = Date.now();
+}
+
+function drawVideoFrame(frame) {
+    try {
+        if (videoEl.width !== frame.displayWidth || videoEl.height !== frame.displayHeight) {
+            videoEl.width = frame.displayWidth;
+            videoEl.height = frame.displayHeight;
+            displayWidth = frame.displayWidth;
+            displayHeight = frame.displayHeight;
+            updateInfoDisplay();
+        }
+        const ctx = videoEl.getContext("2d");
+        ctx.drawImage(frame, 0, 0);
+        markPlaying();
+    } finally {
+        frame.close();
+    }
+}
+
+function ensureDecoder(codec) {
+    if (videoDecoder && videoDecoder.state !== "closed") {
+        return videoDecoder;
+    }
+    closeDecoder();
+    videoDecoder = new VideoDecoder({
+        output: drawVideoFrame,
+        error: (err) => {
+            console.error("VideoDecoder error:", err);
+            requestIdr();
+            scheduleReconnect("decoder");
+        },
+    });
+    videoDecoder.configure({
+        codec,
+        optimizeForLatency: true,
+        hardwareAcceleration: "prefer-hardware",
+    });
+    return videoDecoder;
+}
+
+function nowNs() {
+    return BigInt(Date.now()) * 1000000n;
+}
+
+function feedAccessUnit(msg) {
+    if (typeof VideoDecoder !== "function") {
+        unsupportedPlayback();
         return;
     }
-    destroyPlayer();
-    setOverlayState("connecting", "Connecting", "Connecting to Linux virtual display…");
+    if (msg.key) {
+        const found = OrbiAnnexB.extractSpsPps(msg.au);
+        const codec = OrbiAnnexB.codecStringFromSps(found.sps);
+        if (codec) {
+            try {
+                ensureDecoder(codec);
+            } catch (err) {
+                console.error("VideoDecoder configure failed:", err);
+                scheduleReconnect("codec");
+                return;
+            }
+        }
+        noteKeyframe();
+    }
+    if (!videoDecoder || videoDecoder.state !== "configured") {
+        requestIdr();
+        return;
+    }
+    if (waitingForKeyframe && !msg.key) {
+        requestIdr();
+        return;
+    }
+    const chunk = new EncodedVideoChunk({
+        type: msg.key ? "key" : "delta",
+        timestamp: Number(msg.ptsNs / 1000n),
+        data: msg.au,
+    });
+    try {
+        videoDecoder.decode(chunk);
+    } catch (err) {
+        console.warn("decode failed:", err);
+        closeDecoder();
+        requestIdr();
+    }
+    if (msg.sentNs > 0n) {
+        const glass = Number((nowNs() + clockOffsetNs - msg.sentNs) / 1000000n);
+        if (glass >= 0 && glass <= 5000) {
+            lastDelayMs = glass;
+            updateInfoDisplay();
+        }
+    }
+}
 
+async function startAuStream() {
     const params = new URLSearchParams();
     if (authToken) params.set("token", authToken);
     if (displaySessionId) params.set("session", displaySessionId);
     const qs = params.toString();
-    const streamUrl = qs ? `/stream?${qs}` : "/stream";
-
-    mpegtsPlayer = mpegts.createPlayer({
-        type: "mpegts",
-        isLive: true,
-        url: streamUrl,
-    }, {
-        enableStashBuffer: false,
-        stashInitialSize: 128,
-        autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 2,
-        autoCleanupMinBackwardDuration: 1,
-        lazyLoad: false,
-        lazyLoadMaxDuration: 0,
-        seekType: "range",
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 0.08,
-        liveBufferLatencyMinRemain: 0.016,
-        liveSync: true,
-        liveSyncTargetLatency: 0.03,
+    const res = await fetch(qs ? `/au?${qs}` : "/au", {
+        headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
     });
-
-    videoEl.muted = true;
-    mpegtsPlayer.attachMediaElement(videoEl);
-
-    mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
-        console.error("mpegts error:", errorType, errorDetail, errorInfo);
-        sendHostAction("idr");
-        if (errorDetail === "NetworkError" && !authToken && tokenRow) {
-            tokenRow.classList.remove("hidden");
+    if (!res.ok || !res.body) {
+        throw new Error(`au stream ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const frames = new OrbiAnnexB.FrameReader();
+    (async () => {
+        try {
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                frames.push(value);
+                let msg;
+                while ((msg = frames.pop())) {
+                    if (msg.type === "video") feedAccessUnit(msg);
+                }
+            }
+            scheduleReconnect("au ended");
+        } catch (err) {
+            scheduleReconnect(err.message || "au");
         }
-        scheduleReconnect(errorDetail || errorType || "network");
-    });
-
-    mpegtsPlayer.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
-        if (mediaInfo && mediaInfo.width && mediaInfo.height) {
-            displayWidth = mediaInfo.width;
-            displayHeight = mediaInfo.height;
-            updateInfoDisplay();
+    })();
+    waitingForKeyframe = true;
+    requestIdr();
+    if (latencyWatchdog) clearInterval(latencyWatchdog);
+    latencyWatchdog = setInterval(() => {
+        if (waitingForKeyframe) requestIdr();
+        if (!streamActive) return;
+        if (lastFrameAt && Date.now() - lastFrameAt > 750) {
+            requestIdr({ keepDecoding: true });
+            if (Date.now() - lastFrameAt > 3000) startStream({ quiet: true });
         }
-    });
+    }, 250);
+}
 
-    mpegtsPlayer.load();
-    const playPromise = mpegtsPlayer.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch((error) => {
-            console.warn("autoplay blocked or rejected:", error);
-            setOverlayState("connecting", "Ready to Stream", "Click anywhere on the screen to begin");
-            const onFirstClick = () => {
-                window.removeEventListener("pointerdown", onFirstClick);
-                mpegtsPlayer.play().catch(() => {});
-            };
-            window.addEventListener("pointerdown", onFirstClick);
-        });
+async function startStream(opts = {}) {
+    if (!window.isSecureContext) {
+        const host = (wtConfig && OrbiAnnexB.pickWtHost(wtConfig, window.location.hostname))
+            || window.location.hostname
+            || "host";
+        const port = (wtConfig && wtConfig.wt_port) || 8790;
+        setOverlayState(
+            "error",
+            "Open the HTTPS client",
+            `WebTransport needs a secure page. Open https://${host}:${port}/client/ and accept the certificate.`,
+        );
+        return;
+    }
+    if (typeof VideoDecoder !== "function") {
+        unsupportedPlayback();
+        return;
+    }
+    if (!canPlayWebTransport()) {
+        const s = playbackSupport();
+        const missing = [
+            !s.webTransport && "WebTransport",
+            !s.annexb && "protocol helpers",
+        ].filter(Boolean).join(" and ");
+        setOverlayState("error", "Playback Error", `This browser is missing ${missing}`);
+        return;
+    }
+    destroyPlayer();
+    lastDelayMs = null;
+    clockOffsetNs = 0n;
+    lastFrameAt = 0;
+    if (!opts.quiet) {
+        setOverlayState("connecting", "Connecting", "Connecting to Linux virtual display…");
     }
 
-    latencyWatchdog = setInterval(() => {
-        if (!streamActive || !videoEl || !videoEl.buffered || videoEl.buffered.length === 0) return;
-        try {
-            const end = videoEl.buffered.end(videoEl.buffered.length - 1);
-            const delay = end - videoEl.currentTime;
-            const ms = Math.max(0, Math.round(delay * 1000));
-            if (statLatency) statLatency.textContent = `${ms} ms`;
-            if (delay > 0.08) {
-                videoEl.currentTime = end - 0.02;
+    const cfg = wtConfig || {};
+    const port = cfg.wt_port;
+    const path = cfg.wt_path || "/orbiscreen";
+    const hashB64 = cfg.cert_sha256;
+    if (!port || !hashB64) {
+        setOverlayState("error", "Playback Error", "Host did not advertise WebTransport");
+        return;
+    }
+
+    const host = OrbiAnnexB.pickWtHost(cfg, window.location.hostname);
+    const url = `https://${host}:${port}${path}`;
+    waitingForKeyframe = true;
+
+    try {
+        const hash = OrbiAnnexB.hashFromBase64(hashB64);
+        let transport;
+        let lastErr;
+        for (const opts of [
+            { serverCertificateHashes: [{ algorithm: "sha-256", value: hash }] },
+            {},
+        ]) {
+            let candidate;
+            try {
+                candidate = new WebTransport(url, opts);
+                await Promise.race([
+                    candidate.ready,
+                    new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error("webtransport ready timeout")), 4000);
+                    }),
+                ]);
+                transport = candidate;
+                lastErr = null;
+                break;
+            } catch (err) {
+                lastErr = err;
+                try { if (candidate) candidate.close(); } catch (_) {}
             }
-        } catch (_) {}
+        }
+        if (!transport) {
+            console.warn("webtransport failed, using HTTPS AU stream:", lastErr);
+            await startAuStream();
+            return;
+        }
+        wtTransport = transport;
+        const bidi = await transport.createBidirectionalStream();
+        const writer = bidi.writable.getWriter();
+        wtWriter = writer;
+        await writer.write(OrbiAnnexB.encodeHello(authToken, displaySessionId || ""));
+
+        const reader = bidi.readable.getReader();
+        const frames = new OrbiAnnexB.FrameReader();
+        (async () => {
+            try {
+                while (wtTransport === transport) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    frames.push(value);
+                    let msg;
+                    while ((msg = frames.pop())) {
+                        if (msg.type === "helloAck") {
+                            if (msg.width) displayWidth = msg.width;
+                            if (msg.height) displayHeight = msg.height;
+                            updateInfoDisplay();
+                            requestIdr();
+                        } else if (msg.type === "video") {
+                            feedAccessUnit(msg);
+                        } else if (msg.type === "pong") {
+                            const now = nowNs();
+                            const rtt = now - msg.t0Ns;
+                            clockOffsetNs = msg.hostNs + rtt / 2n - now;
+                        }
+                    }
+                }
+            } catch (err) {
+                if (wtTransport === transport) {
+                    console.error("webtransport read:", err);
+                    displaySessionId = "";
+                    scheduleReconnect(err.message || "transport");
+                }
+            }
+        })();
+
+        const assembler = new OrbiAnnexB.DatagramAssembler();
+        let dgramReader = null;
+        try {
+            dgramReader = transport.datagrams.readable.getReader();
+        } catch (err) {
+            console.warn("webtransport datagrams unavailable:", err);
+        }
+        if (dgramReader) {
+            (async () => {
+                try {
+                    while (wtTransport === transport) {
+                        const { value, done } = await dgramReader.read();
+                        if (done) break;
+                        const msg = assembler.push(value);
+                        if (!msg) continue;
+                        if (msg.type === "gap") {
+                            waitingForKeyframe = true;
+                            requestIdr();
+                            continue;
+                        }
+                        if (msg.type === "video") feedAccessUnit(msg);
+                    }
+                } catch (err) {
+                    // Video can still arrive on the control stream or /au.
+                    console.warn("webtransport datagram:", err);
+                }
+            })();
+        }
+    } catch (err) {
+        console.error("webtransport connect:", err);
+        if (!authToken && tokenRow) tokenRow.classList.remove("hidden");
+        scheduleReconnect(err.message || "connect");
+        return;
+    }
+
+    const wtStartedAt = Date.now();
+    let auFallback = false;
+    latencyWatchdog = setInterval(() => {
+        if (waitingForKeyframe) requestIdr();
+        if (wtWriter) {
+            try { wtWriter.write(OrbiAnnexB.encodePing(nowNs())); } catch (_) {}
+        }
+        if (!auFallback && !streamActive && Date.now() - wtStartedAt > 3500) {
+            auFallback = true;
+            console.warn("webtransport produced no picture; falling back to /au");
+            try { if (wtWriter) wtWriter.close(); } catch (_) {}
+            try { if (wtTransport) wtTransport.close(); } catch (_) {}
+            wtWriter = null;
+            wtTransport = null;
+            startAuStream().catch((err) => {
+                scheduleReconnect(err.message || "au");
+            });
+            return;
+        }
+        if (!streamActive) return;
+        if (lastFrameAt && Date.now() - lastFrameAt > 750) {
+            requestIdr({ keepDecoding: true });
+            if (Date.now() - lastFrameAt > 3000) {
+                startStream({ quiet: true });
+            }
+        }
     }, 250);
 }
 
@@ -1222,8 +1576,13 @@ async function openDisplaySession() {
 async function start() {
     applyTheme(currentTheme);
     applyTranslations();
+    if (typeof VideoDecoder !== "function") {
+        unsupportedPlayback();
+        return;
+    }
     const info = await fetchClientConfig();
     if (info) {
+        wtConfig = info;
         if (!authToken && typeof info.token === "string" && info.token.length > 0) {
             authToken = info.token;
         }
@@ -1243,6 +1602,7 @@ async function start() {
             if (typeof apiInfo?.encoder === "string") {
                 encoderName = apiInfo.encoder.toUpperCase();
             }
+            wtConfig = Object.assign({}, wtConfig || {}, apiInfo);
         }
     } catch (error) {
         console.warn("api/info fetch failed:", error);
@@ -1253,25 +1613,7 @@ async function start() {
     startStream();
 }
 
-videoEl.addEventListener("playing", () => {
-    streamActive = true;
-    reconnectDelay = 1000;
-    if (overlayEl) overlayEl.classList.add("hidden");
-    if (controlToolbar) controlToolbar.classList.remove("hidden");
-    if (miniPill) miniPill.classList.add("hidden");
-});
 
-videoEl.addEventListener("error", () => {
-    if (streamActive || mpegtsPlayer) {
-        scheduleReconnect("media error");
-    }
-});
-
-videoEl.addEventListener("ended", () => {
-    if (streamActive || mpegtsPlayer) {
-        scheduleReconnect("stream ended");
-    }
-});
 
 start().catch((error) => {
     setOverlayState("error", "Initialization Failed", error.message);

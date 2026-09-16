@@ -104,7 +104,7 @@
 - **Material 3 Android client**: Jetpack Compose, Catppuccin Mocha / Latte brand palette, light/dark theme
 - **Auto-Orientation Resolution Adaptation**: Automatically swaps width and height when your phone/tablet rotates between landscape and portrait
 - **3-Row Spacious Keyboard Overlay**: Top-docked layout ensuring bottom taskbars, terminals, and prompts stay 100% visible
-- **Built-in web client**: Watch from any browser at `http://<host>:8788/` (MSE via locally bundled `mpegts.js`, no CDN)
+- **Built-in web client**: Watch from any browser at `https://<host>:8790/client/` (HTTP on `:8788` redirects there). WebTransport Annex-B + WebCodecs `VideoDecoder`.
 - **Live discovery**: NSD scan of nearby hosts, manual `host:port` entry, optional subnet scanner
 - **Native streaming**: ExoPlayer with `OkHttpDataSource` + tuned load control for ultra-low latency MPEG-TS / H.264
 - **Host control panel**: Keyboard, lock, blank, Ctrl+Alt+Del, and retry actions

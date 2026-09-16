@@ -43,7 +43,7 @@ graph TD
     end
 
     subgraph "Clients"
-        G -->|"MPEG-TS"| W["Web client (mpegts.js MSE)"]
+        G -->|"WebTransport Annex-B"| W["Web client (VideoDecoder)"]
         W -->|"POST /input"| F
         G -->|"NSD discovery + token"| H["Android DiscoveryService"]
         H -->|"onConnect"| J["StreamViewModel"]
@@ -68,7 +68,7 @@ graph TD
 | `orbiscreen-capture` | Wayland Portal (ashpd) & X11 (x11rb) capture engines: **fallback source only** | `ashpd`, `x11rb` |
 | `orbiscreen-encode` | Hardware & software H.264 encoding pipelines | `gstreamer`, `gstreamer-app` |
 | `orbiscreen-input` | Reverse touch, stylus, and keyboard injection (uinput) | `evdev`, `ashpd` |
-| `orbiscreen-transport` | Axum HTTP `/stream` + token auth, UDP Annex-B (`udp_port`), mDNS, ADB reverse, `/api/session`, `/api/info`, `/api/control`, `/health` | `axum`, `gstreamer`, `tokio`, `rand`, `base64` |
+| `orbiscreen-transport` | Axum HTTP `/stream` + token auth, UDP Annex-B (`udp_port`), WebTransport Annex-B (`wt_port`), mDNS, ADB reverse, `/api/session`, `/api/info`, `/api/control`, `/health` | `axum`, `gstreamer`, `tokio`, `rand`, `base64`, `wtransport` |
 | `orbiscreen-daemon` | Main daemon binary, systemd integration & live D-Bus service | `zbus`, `clap`, `tokio` |
 
 ---
@@ -116,7 +116,7 @@ Each stage owns its data; frames are copied between stages (no zero-copy, this k
    - Keyframes (GOP) are tuned to 6 frames (~100ms interval) across hardware encoders to allow instant client catch-up and rapid recovery from Wi-Fi jitter.
    - AppSink buffers are capped with `drop = true` and `max-buffers = 1` to prevent queuing delays.
 4. **Playback:**
-   - **Web:** Chrome/Firefox/Edge cannot play raw MPEG-TS in a `<video>` element. The bundled client uses the locally-vendored `mpegts.js` (no CDN) to demux via MSE; on any error it tears down and reconnects with exponential backoff.
+   - **Web:** The bundled client opens WebTransport (`wt_port`) with the advertised certificate hash, feeds Annex-B access units to WebCodecs `VideoDecoder`, and paints a canvas. On any error it tears down and reconnects with exponential backoff.
    - **Android:** `PlayerHolder.build()` builds ExoPlayer with `MimeTypes.VIDEO_MP2T` and ultra-low latency load control (minBuffer: 40ms, maxBuffer: 120ms, bufferForPlayback: 20ms, bufferForPlaybackAfterRebuffer: 30ms).
    - **Disconnect & Recovery:** On transport errors, an immediate 500ms `/health` probe verifies daemon state, with reconnections capped at 3 attempts to prevent infinite retry loops.
 5. **Reverse Input:**
