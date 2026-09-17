@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.29.0
+Version:        0.29.1
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +144,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Thu Sep 17 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.29.1-1
+- Release 0.29.1: Fix dual screen AOA supervisor port routing to daemon port; guard Android input against unauthenticated 401 request storms; fix KWin pointer binding for fluid mouse motion; add automatic session reconnection and extend post-viewer idle timeout.
+
 * Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.29.0-1
 - Release 0.29.0: WebTransport Annex-B web client with WebCodecs hardware decoding, one-frame VBV rate control for ultra-low latency, reliable IDR stream with Reed-Solomon FEC for P-frame datagrams, and Android AU reordering packet loss recovery (PR #80 by @sentinelt).
 

@@ -1,6 +1,3 @@
-// Orbiscreen - client_display.rs (GPL-3.0-or-later)
-// https://github.com/shadow-x78/orbiscreen
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -9,15 +6,13 @@ use std::time::Duration;
 use orbiscreen_capture::kwin_virtual::{protocol_names_for, KwinVirtualCapture, KwinVirtualSpec};
 use orbiscreen_encode::{EncodeParams, Encoder, EncoderKind};
 use orbiscreen_input::{InputInjector, PointerEvent, VirtualTouchscreenSpec};
-use orbiscreen_transport::{DisplayCommand, DisplayCtl, DisplayInfo, H264Packet, IncomingInput};
+use orbiscreen_transport::{
+    DisplayCommand, DisplayCtl, DisplayInfo, H264Packet, IncomingInput,
+};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{info, warn};
 
-/// After the last viewer detaches, keep the virtual output around long enough
-/// for Firefox to fall back from WebTransport to `/au`.
-const IDLE_AFTER_LAST_VIEWER: Duration = Duration::from_secs(20);
-/// Fresh sessions have to survive Firefox's WebTransport handshake (and the
-/// 4s ready-timeout plus HTTPS `/au` fallback). 750ms was racing that path.
+const IDLE_AFTER_LAST_VIEWER: Duration = Duration::from_secs(120);
 const WAITING_FOR_FIRST_VIEWER: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug)]
@@ -106,6 +101,17 @@ async fn handle_cmd(
             height,
             reply,
         } => {
+            if let Some(ref k) = key {
+                if let Some((existing_id, existing_session)) = sessions
+                    .iter_mut()
+                    .find(|(_, s)| s.client_key.as_ref() == Some(k))
+                {
+                    idle_at.insert(existing_id.clone(), tokio::time::Instant::now());
+                    let info = existing_session.info.clone();
+                    let _ = reply.send(Ok(info));
+                    return;
+                }
+            }
             let result = open_session(cfg, name, key, width, height).await;
             if let Ok(session) = result {
                 let info = session.info.clone();
@@ -218,7 +224,14 @@ async fn handle_cmd(
             let _ = reply.send(info);
         }
         DisplayCommand::Input { id, event } => {
-            let chosen = resolve_id(sessions, id.as_deref());
+            let chosen = resolve_id(sessions, id.as_deref()).or_else(|| {
+                sessions
+                    .iter()
+                    .filter(|(_, s)| s.viewers > 0)
+                    .map(|(k, _)| k.clone())
+                    .next()
+                    .or_else(|| sessions.keys().next().cloned())
+            });
             if let Some(sid) = chosen {
                 if let Some(session) = sessions.get(&sid) {
                     let _ = session.input_tx.try_send(event);
@@ -639,7 +652,9 @@ where
         if let Some(uuid) = uuid.as_deref() {
             let _ = proxy.set_property::<&str>("outputUuid", uuid).await;
         }
-        let _ = proxy.set_property::<bool>("mapToWorkspace", false).await;
+        if !name.ends_with("Mouse") && !name.contains("Mouse and Keyboard") {
+            let _ = proxy.set_property::<bool>("mapToWorkspace", false).await;
+        }
         info!("bound KWin input device {path} ({name}) to output {resolved}");
         bound += 1;
     }

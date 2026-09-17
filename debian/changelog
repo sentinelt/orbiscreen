@@ -1,3 +1,14 @@
+orbiscreen (0.29.1-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.29.1 for Ubuntu noble.
+  * Fix dual screen AOA USB supervisor port routing to target daemon port.
+  * Guard Android input dispatcher against unauthenticated 401 request storms.
+  * Fix KWin pointer binding to allow fluid desktop mouse cursor motion.
+  * Add automatic session reconnection and extend post-viewer idle timeout.
+  * Bump version across workspace and packaging configurations.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Thu, 17 Sep 2026 05:05:00 +0300
+
 orbiscreen (0.29.0-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.29.0 for Ubuntu noble.

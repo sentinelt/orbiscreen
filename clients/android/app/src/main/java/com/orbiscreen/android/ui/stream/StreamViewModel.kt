@@ -238,6 +238,7 @@ class StreamViewModel(
             displayHeight = state.value.displayHeight,
             token = sessionToken ?: "",
             tokenProvider = { sessionToken ?: "" },
+            sessionIdProvider = { displaySessionId },
         ).also {
             it.pointerSpeed = prefs.pointerSpeed
             it.onUnauthorized = {

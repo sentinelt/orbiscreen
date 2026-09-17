@@ -650,7 +650,6 @@ pub fn get_connected_candidate_names() -> Vec<String> {
 }
 
 struct ActiveBridge {
-    port: u16,
     running: Arc<AtomicBool>,
     handle: tokio::task::JoinHandle<Result<(), String>>,
 }
@@ -680,12 +679,7 @@ pub async fn supervisor(
             if is_google_accessory(dev.vendor_id, dev.product_id) {
                 if !active_bridges.contains_key(&dev.dev_node) {
                     info!("AOA accessory device detected: {:?}", dev.dev_node);
-                    let used_ports: Vec<u16> = active_bridges.values().map(|b| b.port).collect();
-                    let target_port = if !used_ports.contains(&daemon_port) {
-                        daemon_port
-                    } else {
-                        daemon_port + 2
-                    };
+                    let target_port = daemon_port;
                     let running = Arc::new(AtomicBool::new(true));
                     let running_inner = running.clone();
                     let dev_clone = dev.clone();
@@ -695,7 +689,6 @@ pub async fn supervisor(
                     active_bridges.insert(
                         dev.dev_node.clone(),
                         ActiveBridge {
-                            port: target_port,
                             running,
                             handle,
                         },

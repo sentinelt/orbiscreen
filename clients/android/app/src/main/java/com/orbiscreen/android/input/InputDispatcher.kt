@@ -29,6 +29,7 @@ class InputDispatcher(
     displayHeight: Int,
     token: String = "",
     private val tokenProvider: (() -> String)? = null,
+    private val sessionIdProvider: (() -> String?)? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http = OkHttpClient.Builder()
@@ -318,6 +319,11 @@ class InputDispatcher(
     ) {
         scope.launch {
             var ok = false
+            val t = tokenProvider?.invoke()?.takeIf { it.isNotBlank() } ?: token
+            if (t.isBlank()) {
+                onResult?.invoke(false)
+                return@launch
+            }
             try {
                 val body = JSONObject().apply {
                     put("action", action)
@@ -326,12 +332,10 @@ class InputDispatcher(
                 }
                 val builder = Request.Builder()
                     .url("http://$host:$port/api/control")
+                    .header("Authorization", "Bearer $t")
                     .post(body.toString().toRequestBody("application/json".toMediaType()))
-                val t = tokenProvider?.invoke()?.takeIf { it.isNotBlank() } ?: token
-                if (t.isNotBlank()) {
-                    builder.header("Authorization", "Bearer $t")
-                }
-                sessionId?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
+                val sid = sessionIdProvider?.invoke()?.takeIf { it.isNotBlank() } ?: sessionId
+                sid?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
                 http.newCall(builder.build()).execute().use { resp ->
                     ok = resp.isSuccessful
                     if (!ok) {
@@ -358,17 +362,21 @@ class InputDispatcher(
         return (nx * streamWidth).roundToInt() to (ny * streamHeight).roundToInt()
     }
 
+    private var lastUnauthorizedMs = 0L
+
     private fun send(payload: JSONObject) {
         try {
             val t = tokenProvider?.invoke()?.takeIf { it.isNotBlank() } ?: token
+            if (t.isBlank()) {
+                return
+            }
             val builder = Request.Builder()
                 .url("http://$host:$port/input")
                 .header("Connection", "keep-alive")
+                .header("Authorization", "Bearer $t")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            if (t.isNotBlank()) {
-                builder.header("Authorization", "Bearer $t")
-            }
-            sessionId?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
+            val sid = sessionIdProvider?.invoke()?.takeIf { it.isNotBlank() } ?: sessionId
+            sid?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
             http.newCall(builder.build()).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
                     Log.v(TAG, "send failed: ${e.message}")
@@ -376,9 +384,13 @@ class InputDispatcher(
                 override fun onResponse(call: okhttp3.Call, resp: okhttp3.Response) {
                     resp.use {
                         if (it.code == 401) {
-                            Log.w(TAG, "send rejected with HTTP 401, triggering re-auth")
-                            token = ""
-                            onUnauthorized?.invoke()
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (now - lastUnauthorizedMs > 1000L) {
+                                lastUnauthorizedMs = now
+                                Log.w(TAG, "send rejected with HTTP 401, triggering re-auth")
+                                token = ""
+                                onUnauthorized?.invoke()
+                            }
                         } else if (!it.isSuccessful) {
                             Log.w(TAG, "send rejected with HTTP ${it.code}")
                         }
@@ -386,7 +398,7 @@ class InputDispatcher(
                 }
             })
         } catch (e: Exception) {
-            Log.v(TAG, "send failed: ${e.message}")
+            Log.v(TAG, "send dispatch failed: ${e.message}")
         }
     }
 

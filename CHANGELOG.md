@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.29.1] - 2026-09-17
+
+Fix dual screen USB AOA accessory routing, guard Android input pipeline against unauthenticated 401 request storms, restore fluid desktop mouse cursor motion in KWin, and ensure seamless session reconnection across physical USB hiccups.
+
+### 🐛 Bug Fixes
+- **Dual screen AOA transport routing**:
+  - Fixed AOA USB accessory supervisor to forward all connected devices directly to `daemon_port` (8788). Device 2 no longer routes to WebTransport port (8790), enabling simultaneous multi-tablet connections over USB.
+- **Android input 401 loop prevention**:
+  - In `InputDispatcher`, guarded `send()` and `control()` to return immediately when the auth token is blank, eliminating 60 unauthenticated requests/second over USB bulk endpoints.
+  - Debounced 401 re-authentication triggers to at most once per second.
+  - Provided dynamic session ID via `sessionIdProvider` in input payload headers.
+- **KWin mouse cursor binding**:
+  - Excluded relative mouse pointer devices (`*Mouse` and `*Mouse and Keyboard`) from `mapToWorkspace = false`, unlocking the mouse cursor to move freely across all desktop workspaces while maintaining direct touchscreen and stylus geometry isolation.
+- **Session reconnection and resilience**:
+  - Reconnected existing virtual display sessions matching `client_key` in `DisplayCommand::Acquire`, preventing duplicate virtual outputs and race conditions.
+  - Added fallback routing to active viewing sessions in `DisplayCommand::Input` to prevent dropped inputs.
+  - Extended `IDLE_AFTER_LAST_VIEWER` from 20s to 120s to tolerate physical USB disconnects and reconnections without tearing down virtual displays.
+
+### 📦 Packaging & Versions
+- **Workspace & Packaging**:
+  - Bumped Cargo workspace package version to `0.29.1`.
+  - Incremented Android client `versionCode` to `104`; updated `versionName` to `"0.29.1"`.
+  - Updated `tauri.conf.json` version to `0.29.1`.
+  - Bumped PKGBUILD `pkgver` to `0.29.1`.
+  - Added `0.29.1-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+  - Synchronized documentation badges across all architecture and specification guides.
+
+---
+
 ## [v0.29.0] - 2026-09-16
 
 Introduce WebTransport Annex-B web streaming with WebCodecs hardware decoding, one-frame VBV CBR rate control for ultra-low latency, reliable IDR and parameter set distribution with Reed-Solomon FEC for P-frame datagrams, robust Android client AU reordering and packet loss recovery, and bump the release matrix across all platforms.
