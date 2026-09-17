@@ -152,26 +152,46 @@ fn set_u32_if_present(el: &gstreamer::Element, name: &str, value: u32) {
     }
 }
 
-fn one_frame_vbv_ms(framerate: u32) -> u32 {
+pub fn suggested_bitrate_kbps(width: u32, height: u32, framerate: u32) -> u32 {
+    let pps = (width as u64) * (height as u64) * (framerate.max(1) as u64);
+    // Target ~0.08 bits per pixel for clean desktop streaming, clamped between 8 Mbps and 50 Mbps
+    let kbps = (pps * 8 / 100 / 1000) as u32;
+    kbps.clamp(8_000, 50_000)
+}
+
+pub fn one_frame_vbv_ms(framerate: u32) -> u32 {
     let fps = framerate.max(1);
     1000u32.div_ceil(fps)
 }
 
-fn one_frame_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
+pub fn one_frame_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
     let fps = framerate.max(1);
     bitrate_kbps.max(1).div_ceil(fps).max(1)
 }
 
+pub fn low_latency_vbv_ms(framerate: u32) -> u32 {
+    let fps = framerate.max(1);
+    // 100ms to 400ms provides low-latency responsiveness without frame starvation
+    (1000u32 / fps * 6).clamp(100, 400)
+}
+
+pub fn low_latency_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
+    let fps = framerate.max(1);
+    let one_frame = bitrate_kbps.max(1).div_ceil(fps).max(1);
+    // 6 frames of headroom for IDR keyframes and motion bursts, minimum 300 KB
+    (one_frame * 6).max(300)
+}
+
 fn configure_one_frame_vbv(encoder: &gstreamer::Element, bitrate_kbps: u32, framerate: u32) {
-    let vbv_ms = one_frame_vbv_ms(framerate);
-    let vbv_kb = one_frame_vbv_kb(bitrate_kbps, framerate);
+    let vbv_ms = low_latency_vbv_ms(framerate);
+    let vbv_kb = low_latency_vbv_kb(bitrate_kbps, framerate);
     set_u32_if_present(encoder, "vbv-buf-capacity", vbv_ms);
     set_u32_if_present(encoder, "cpb-size", vbv_kb);
     set_u32_if_present(encoder, "vbv-buffer-size", vbv_kb);
     set_u32_if_present(encoder, "rc-lookahead", 0);
     info!(
         vbv_ms,
-        vbv_kb, bitrate_kbps, framerate, "capped VBV/CPB at one frame"
+        vbv_kb, bitrate_kbps, framerate, "configured low-latency VBV/CPB buffer"
     );
 }
 
@@ -345,6 +365,9 @@ impl Encoder {
             if encoder.find_property("b-frames").is_some() {
                 encoder.set_property_from_str("b-frames", "0");
             }
+            // Prevent catastrophic pixelation by capping maximum QP
+            set_u32_if_present(&encoder, "qp-max-i", 35);
+            set_u32_if_present(&encoder, "qp-max-p", 38);
         }
         if kind == EncoderKind::Vaapi {
             if encoder.find_property("rate-control").is_some() {
@@ -741,8 +764,8 @@ mod tests {
     }
 
     fn assert_live_one_frame_vbv(enc: &Encoder) {
-        let want_ms = one_frame_vbv_ms(60);
-        let want_kb = one_frame_vbv_kb(8000, 60);
+        let want_ms = low_latency_vbv_ms(60);
+        let want_kb = low_latency_vbv_kb(8000, 60);
         if enc.encoder.find_property("vbv-buf-capacity").is_some() {
             let got = enc.encoder.property::<u32>("vbv-buf-capacity");
             assert_ne!(
@@ -758,7 +781,7 @@ mod tests {
             if got != want_kb {
                 assert!(
                     got >= want_kb,
-                    "vah264enc cpb-size {got} is below one-frame {want_kb}"
+                    "vah264enc cpb-size {got} is below low-latency {want_kb}"
                 );
             }
         }
@@ -770,6 +793,14 @@ mod tests {
             );
             assert_eq!(got, want_kb);
         }
+    }
+
+    #[test]
+    fn suggested_bitrate_scales_with_resolution_and_fps() {
+        assert_eq!(suggested_bitrate_kbps(1920, 1080, 60), 9953);
+        assert_eq!(suggested_bitrate_kbps(2560, 1600, 90), 29491);
+        assert_eq!(suggested_bitrate_kbps(1280, 720, 30), 8000);
+        assert_eq!(suggested_bitrate_kbps(3840, 2160, 60), 39813);
     }
 
     #[test]
@@ -792,6 +823,10 @@ mod tests {
         };
         configure_one_frame_vbv(&enc, 8000, 60);
         assert_eq!(enc.property::<u32>("cpb-size"), 134);
+        assert_eq!(
+            enc.property::<u32>("cpb-size"),
+            low_latency_vbv_kb(8000, 60)
+        );
     }
 
     #[test]

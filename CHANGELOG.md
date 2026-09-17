@@ -3,6 +3,35 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+## [v0.30.1] - 2026-09-18
+
+Fix encoder VBV buffer sizing and dynamic bitrate scaling to eliminate severe pixelation, unblock UDP video keyframe delivery, fix KWin Wayland pointer device scoping, synchronize tablet touch with desktop mouse cursor, and optimize Android input dispatcher with motion event coalescing.
+
+### 🐛 Bug Fixes
+- **Encoder VBV buffer & rate control**:
+  - Replaced the severe 1-frame (89 kbits / 11 KB) VBV buffer cap with `low_latency_vbv_kb` providing a minimum 300 KB / 6 frames buffer headroom and 100-400ms time window, eliminating macroblocking and QP 51 degradation under NVENC.
+  - Added dynamic bitrate calculation (`suggested_bitrate_kbps`) scaling at ~0.08 bpp clamped to [8,000, 50,000] kbps, auto-scaling 2560x1600@90Hz to ~30 Mbps instead of 8 Mbps.
+  - Enforced QP caps (`qp-max-i: 35`, `qp-max-p: 38`) to prevent video quality collapse under sudden scene complexity changes.
+- **UDP stream keyframe delivery**:
+  - Removed erroneous keyframe dropping in `udp_stream.rs` (`run_udp_hub` and `forward_udp_video`) that suppressed IDR frames over UDP, eliminating stream freezing and repeated 250ms IDR recovery request loops on Android.
+- **KWin Wayland pointer device scoping**:
+  - In `bind_named_kwin_devices`, exempted relative pointer devices (`*Mouse` and `*Mouse and Keyboard`) from virtual output scoping, allowing desktop mouse cursor movement across all screens while keeping touchscreens and styluses isolated to virtual displays.
+- **Desktop mouse cursor touch synchronization**:
+  - In `x11.rs`, synchronized desktop pointer coordinates on slot 0 touch events so touching the tablet moves the desktop cursor to the touched position.
+- **Android input responsiveness & motion coalescing**:
+  - Implemented motion event coalescing in `InputDispatcher.kt` to drop stale motion events and dispatch only the freshest coordinates.
+  - Guaranteed `submit()` never blocks the UI thread during high-rate motion bursts.
+  - Increased OkHttp client connection pool size from 1 to 5 and reduced timeouts to 500ms to eliminate cascading HTTP input latency.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.1`.
+- Incremented Android client `versionCode` to `106` and updated `versionName` to `"0.30.1"`.
+- Updated `tauri.conf.json` version to `0.30.1`.
+- Bumped PKGBUILD `pkgver` to `0.30.1`.
+- Added `0.30.1-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+- Synchronized documentation badges across all architecture, troubleshooting, and specification guides.
+
 ## [v0.30.0] - 2026-09-17
 
 Full-project audit, security fixes, bug fixes, and dead-code/comment cleanup.

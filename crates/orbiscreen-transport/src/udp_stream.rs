@@ -896,11 +896,6 @@ pub async fn run_udp_hub(
                 if targets.is_empty() {
                     continue;
                 }
-                if super::wt_protocol::video_carrier(pkt.is_keyframe, true)
-                    == super::wt_protocol::VideoCarrier::Reliable
-                {
-                    continue;
-                }
                 seq = seq.wrapping_add(1);
                 let sent_ns = now_unix_ns();
                 for (addr, payload) in targets {
@@ -947,11 +942,6 @@ async fn forward_udp_video(fwd: UdpForward, mut video_rx: broadcast::Receiver<H2
         };
         let chunk = fwd.payload.load(std::sync::atomic::Ordering::Relaxed);
         if chunk == 0 {
-            continue;
-        }
-        if super::wt_protocol::video_carrier(pkt.is_keyframe, true)
-            == super::wt_protocol::VideoCarrier::Reliable
-        {
             continue;
         }
         seq = seq.wrapping_add(1);

@@ -73,18 +73,43 @@ internal class OrderedInputQueue<T>(capacity: Int = 64) {
             }
         }
         val entry = Entry(values, motionKey)
-        if (channel.trySendBlocking(entry).isFailure) return false
+        val sent = channel.trySend(entry).isSuccess
+        if (!sent) {
+            if (motionKey == null) {
+                if (channel.trySendBlocking(entry).isFailure) return false
+            } else {
+                return false
+            }
+        }
         tail = entry
         true
     }
 
     suspend fun drain(deliver: (T) -> Unit) {
-        for (entry in channel) {
-            val values = synchronized(entry) {
-                entry.consumed = true
-                entry.values
+        try {
+            for (entry in channel) {
+                var currentEntry = entry
+                while (currentEntry.motionKey != null) {
+                    val next = channel.tryReceive().getOrNull() ?: break
+                    if (next.motionKey == currentEntry.motionKey) {
+                        currentEntry = next
+                    } else {
+                        val values = synchronized(currentEntry) {
+                            currentEntry.consumed = true
+                            currentEntry.values
+                        }
+                        for (value in values) deliver(value)
+                        currentEntry = next
+                    }
+                }
+                val values = synchronized(currentEntry) {
+                    currentEntry.consumed = true
+                    currentEntry.values
+                }
+                for (value in values) deliver(value)
             }
-            for (value in values) deliver(value)
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            // normal termination
         }
     }
 
@@ -109,6 +134,10 @@ class InputDispatcher(
         .connectTimeout(1, TimeUnit.SECONDS)
         .readTimeout(1, TimeUnit.SECONDS)
         .writeTimeout(1, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(5, 5, TimeUnit.MINUTES))
+        .connectTimeout(500, TimeUnit.MILLISECONDS)
+        .readTimeout(500, TimeUnit.MILLISECONDS)
+        .writeTimeout(500, TimeUnit.MILLISECONDS)
         .build()
 
     @Volatile
@@ -368,6 +397,7 @@ class InputDispatcher(
             sid?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
             val call = http.newCall(builder.build())
             call.timeout().timeout(1, TimeUnit.SECONDS)
+            call.timeout().timeout(500, TimeUnit.MILLISECONDS)
             call.execute().use { resp ->
                 if (resp.code == 401) {
                     val now = android.os.SystemClock.elapsedRealtime()

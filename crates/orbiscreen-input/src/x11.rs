@@ -331,9 +331,23 @@ impl UinputInjector {
     pub fn inject_touch(&mut self, event: TouchEvent) -> Result<(), InputError> {
         let slot = (event.slot as usize).min(crate::MAX_TOUCH_SLOTS - 1);
         let (xi, yi) = self.clamp_point(event.x, event.y);
+        let prev_x = self.cursor_x;
+        let prev_y = self.cursor_y;
         if event.pressed {
             self.cursor_x = f64::from(xi);
             self.cursor_y = f64::from(yi);
+            if slot == 0 {
+                let dx = xi - prev_x.round() as i32;
+                let dy = yi - prev_y.round() as i32;
+                if dx != 0 || dy != 0 {
+                    let p_events = vec![
+                        RelEvent::new(Rel::X, dx).into(),
+                        RelEvent::new(Rel::Y, dy).into(),
+                        SynEvent::new(Syn::REPORT).into(),
+                    ];
+                    let _ = self.mouse_keyboard.write_events(&p_events);
+                }
+            }
         }
         let tracking_id = if event.id >= 0 { event.id } else { slot as i32 };
 

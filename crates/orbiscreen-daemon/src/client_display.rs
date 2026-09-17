@@ -373,10 +373,17 @@ async fn open_session(
         });
     }
 
+    let target_bitrate = bitrate_kbps.unwrap_or_else(|| {
+        if cfg.bitrate_kbps > 0 && cfg.bitrate_kbps != 8000 {
+            cfg.bitrate_kbps
+        } else {
+            orbiscreen_encode::suggested_bitrate_kbps(actual_w, actual_h, cfg.refresh_hz)
+        }
+    });
+
     let mut encoder = Encoder::new(EncodeParams {
         kind: cfg.encode_kind,
-
-        bitrate_kbps: bitrate_kbps.unwrap_or(cfg.bitrate_kbps),
+        bitrate_kbps: target_bitrate,
         width: actual_w,
         height: actual_h,
         framerate: cfg.refresh_hz,
@@ -687,14 +694,17 @@ where
         if !name_matches(&name) {
             continue;
         }
-        if let Err(e) = proxy.set_property::<&str>("outputName", resolved).await {
-            warn!("could not set outputName={resolved} on {path} ({name}): {e}");
-            continue;
-        }
-        if let Some(uuid) = uuid.as_deref() {
-            let _ = proxy.set_property::<&str>("outputUuid", uuid).await;
-        }
-        if !name.ends_with("Mouse") && !name.contains("Mouse and Keyboard") {
+        let is_pointer = name.ends_with("Mouse") || name.contains("Mouse and Keyboard");
+        if is_pointer {
+            let _ = proxy.set_property::<bool>("mapToWorkspace", true).await;
+        } else {
+            if let Err(e) = proxy.set_property::<&str>("outputName", resolved).await {
+                warn!("could not set outputName={resolved} on {path} ({name}): {e}");
+                continue;
+            }
+            if let Some(uuid) = uuid.as_deref() {
+                let _ = proxy.set_property::<&str>("outputUuid", uuid).await;
+            }
             let _ = proxy.set_property::<bool>("mapToWorkspace", false).await;
         }
         info!("bound KWin input device {path} ({name}) to output {resolved}");
