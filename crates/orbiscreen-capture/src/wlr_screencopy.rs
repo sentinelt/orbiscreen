@@ -697,7 +697,7 @@ fn assemble_frame_rows(
         let dst = &mut dst[row * row_bytes..row * row_bytes + row_bytes];
         dst.copy_from_slice(&src[start..end]);
         if premultiplied {
-            for px in dst.chunks_exact_mut(4) {
+            for px in dst.as_chunks_mut::<4>().0 {
                 px[3] = 0xFF;
             }
         }
