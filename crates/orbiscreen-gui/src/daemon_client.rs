@@ -26,6 +26,8 @@ pub struct DaemonStatus {
     pub udp_port: u16,
     pub local_ips: Vec<String>,
     pub session_token: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 impl Default for DaemonStatus {
@@ -48,6 +50,7 @@ impl Default for DaemonStatus {
             udp_port: 8789,
             local_ips: Vec::new(),
             session_token: None,
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
         }
     }
 }

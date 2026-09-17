@@ -26,6 +26,7 @@ async function invoke(cmd, args = {}) {
         };
     }
     if (cmd === "get_autostart") return false;
+    if (cmd === "get_app_version") return "0.30.2";
     return null;
 }
 
@@ -478,7 +479,6 @@ if (btnOpenUsb) {
 }
 
 document.querySelectorAll("#resChips .chip").forEach(chip => {
-    chip.addEventListener("click", () => {
     chip.addEventListener("click", async () => {
         document.querySelectorAll("#resChips .chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
@@ -503,7 +503,6 @@ document.querySelectorAll("#resChips .chip").forEach(chip => {
 });
 
 document.querySelectorAll("#fpsChips .chip").forEach(chip => {
-    chip.addEventListener("click", () => {
     chip.addEventListener("click", async () => {
         document.querySelectorAll("#fpsChips .chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
@@ -587,9 +586,22 @@ if (btnFixDoctor) {
     });
 }
 
+async function refreshAppVersion() {
+    try {
+        const ver = await invoke("get_app_version");
+        if (ver) {
+            const badge = document.getElementById("versionBadge") || document.querySelector(".versionBadge");
+            if (badge) badge.textContent = `v${ver}`;
+        }
+    } catch (e) {
+        console.warn("Failed to get app version:", e);
+    }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
     applyTranslations();
     applyTheme(currentTheme);
+    await refreshAppVersion();
     await refreshStatus();
     setInterval(refreshStatus, 3000);
 });

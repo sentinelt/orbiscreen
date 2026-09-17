@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.2] - 2026-09-18
+
+Fix GUI unresponsiveness and syntax error (Issue #81), add dynamic version query via Tauri and D-Bus, prevent manual disconnect auto-reconnection loop in Android and Web clients, and guarantee clean daemon shutdown and pipeline teardown on SIGINT/Ctrl+C.
+
+### 🐛 Bug Fixes
+- **GUI responsiveness & syntax error (Issue #81)**:
+  - Fixed syntax error (`SyntaxError: Unexpected end of input`) in `crates/orbiscreen-gui/ui/app.js` and unexpected token in `clients/web/app.js` that broke web UI script evaluation.
+  - Added `get_app_version` Tauri invoke command in `orbiscreen-gui` and updated `refreshAppVersion()` to dynamically query the compiled package version rather than relying on stale hardcoded UI strings.
+  - Added `version` field to daemon D-Bus `GetStatus` response and `DaemonStatus` struct in GUI client.
+- **Auto-reconnection on manual disconnect**:
+  - In Android client (`OrbiNav.kt`), introduced `manualDisconnect` suppression state. When the user taps Disconnect, `autoConnectEvent` is silenced until user reconnects or cable is replugged.
+  - In Web client (`app.js`), set `userDisconnected` and cancelled active `/au` reader on teardown to avoid immediately triggering `scheduleReconnect`.
+- **Daemon pipeline cleanup on termination**:
+  - In `orbiscreen-daemon/src/main.rs`, ensured `shutdown_keepalive` is always triggered upon exit from `serve_fut` (including SIGINT/Ctrl+C), stopping encoder pipelines and damage capture threads cleanly to prevent hang and channel overflow.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.2`.
+- Incremented Android client `versionCode` to `107` and updated `versionName` to `"0.30.2"`.
+- Updated `tauri.conf.json` version to `0.30.2`.
+- Bumped PKGBUILD `pkgver` to `0.30.2`.
+- Added `0.30.2-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+- Synchronized documentation badges across all architecture, troubleshooting, and specification guides.
+
 ## [v0.30.1] - 2026-09-18
 
 Fix encoder VBV buffer sizing and dynamic bitrate scaling to eliminate severe pixelation, unblock UDP video keyframe delivery, fix KWin Wayland pointer device scoping, synchronize tablet touch with desktop mouse cursor, and optimize Android input dispatcher with motion event coalescing.

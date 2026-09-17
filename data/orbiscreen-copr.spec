@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.30.1
+Version:        0.30.2
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +143,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.2-1
+- Release 0.30.2: Fix GUI unresponsiveness and syntax error (Issue #81), add dynamic version detection in GUI and D-Bus daemon, prevent manual disconnect auto-reconnection loop in Android and Web clients, and ensure graceful pipeline shutdown on SIGINT/Ctrl+C.
+
 * Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.1-1
 - Release 0.30.1: Fix NVENC VBV buffer cap and dynamic bitrate scaling to eliminate pixelation and macroblocking, unblock UDP video keyframes to prevent decoder freezes and IDR storms, fix KWin pointer output binding to restore fluid mouse motion, synchronize touch input with mouse cursor in X11 injector, and optimize Android input dispatcher with motion event coalescing.
 

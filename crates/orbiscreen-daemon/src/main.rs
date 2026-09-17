@@ -1323,20 +1323,23 @@ async fn run_start_per_client(
 
     tokio::select! {
         res = &mut serve_fut => {
+            let _ = shutdown_keepalive.send(true);
             res.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         }
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT (Ctrl-C), initiating graceful shutdown...");
-            _ = shutdown_keepalive.send(true);
+            let _ = shutdown_keepalive.send(true);
             let _ = (&mut serve_fut).await;
         }
         _ = shutdown_rx.changed() => {
             info!("D-Bus Stop received, initiating graceful shutdown...");
-            _ = shutdown_keepalive.send(true);
+            let _ = shutdown_keepalive.send(true);
             let _ = (&mut serve_fut).await;
         }
     }
+    let _ = shutdown_keepalive.send(true);
     is_running.store(false, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     Ok(())
 }
 

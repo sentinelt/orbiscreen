@@ -57,6 +57,7 @@ impl OrbiscreenDbusServer {
             "display_height": dh,
             "display_fps": dfps,
             "signaling_port": sport,
+            "version": env!("CARGO_PKG_VERSION"),
         })
         .to_string()
     }

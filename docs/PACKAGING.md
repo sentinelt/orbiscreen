@@ -2,7 +2,7 @@
 
 # Multi-Distro Packaging Guide - Orbiscreen
 
-[![Version](https://img.shields.io/badge/version-0.30.1-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.2-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.92%2B-16a34a?style=flat-square&logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -30,12 +30,12 @@
 
 When cutting a release, the version must be updated across all packages:
 
-- `Cargo.toml`: `[workspace.package].version = "0.30.1"`
-- `clients/android/app/build.gradle.kts`: `versionName = "0.30.1"`, `versionCode` incremented
-- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.1"`
-- `PKGBUILD`: `pkgver=0.30.1`
-- `debian/changelog`: new entry for `0.30.1-1`
-- `data/orbiscreen-copr.spec`: `Version: 0.30.1`
+- `Cargo.toml`: `[workspace.package].version = "0.30.2"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.30.2"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.2"`
+- `PKGBUILD`: `pkgver=0.30.2`
+- `debian/changelog`: new entry for `0.30.2-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.30.2`
 
 Use the check script:
 
@@ -48,7 +48,7 @@ cargo run -p orbiscreen-daemon -- --version
 <a id="packaging-matrix"></a>
 ## 📦 Packaging Matrix
 
-The release matrix is: `0.30.1` (workspace), `versionCode = 106` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.30.2` (workspace), `versionCode = 107` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 
 Orbiscreen provides build configurations and package definitions for all major Linux distributions and Android:
 

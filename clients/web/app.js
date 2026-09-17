@@ -517,6 +517,8 @@ let wtWriter = null;
 let videoDecoder = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
+let userDisconnected = false;
+let auReader = null;
 const MAX_RECONNECT_DELAY = 10000;
 let clockOffsetNs = 0n;
 let lastFrameAt = 0;
@@ -562,7 +564,6 @@ function updateInfoDisplay() {
     const delayText = (lastDelayMs != null && lastDelayMs >= 0)
         ? `delay ${lastDelayMs}ms`
         : "delay —";
-        : "delay -";
     const narrow = window.matchMedia("(orientation: portrait), (max-width: 720px)").matches;
     const infoStr = narrow
         ? delayText
@@ -1044,6 +1045,7 @@ if (btnActionResync) {
 if (btnDisconnect) {
     btnDisconnect.addEventListener("click", (e) => {
         e.stopPropagation();
+        userDisconnected = true;
         destroyPlayer();
         setOverlayState("disconnected", t("statusDisconnected"), t("statusDisconnected"));
         showToast(t("toastDisconnected"));
@@ -1053,6 +1055,7 @@ if (btnDisconnect) {
 if (btnReconnect) {
     btnReconnect.addEventListener("click", (e) => {
         e.stopPropagation();
+        userDisconnected = false;
         if (pairingAttempt) return;
         start().catch(() => showPairing("Could not reconnect. Try pairing again."));
     });
@@ -1400,6 +1403,10 @@ function destroyPlayer() {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
     }
+    if (auReader) {
+        try { auReader.cancel(); } catch (_) {}
+        auReader = null;
+    }
     if (wtWriter) {
         try { wtWriter.close(); } catch (_) {}
         wtWriter = null;
@@ -1438,6 +1445,7 @@ async function refreshToken() {
 
 function scheduleReconnect(reason) {
     if (reconnectTimer || pairingAttempt || !authToken) return;
+    if (userDisconnected || reconnectTimer || pairingAttempt || !authToken) return;
     destroyPlayer();
     setOverlayState("connecting", "Connecting", `Reconnecting (${reason})…`);
     reconnectTimer = setTimeout(() => {
@@ -1579,6 +1587,7 @@ async function startAuStream() {
         throw new Error(`au stream ${res.status}`);
     }
     const reader = res.body.getReader();
+    auReader = reader;
     const frames = new OrbiAnnexB.FrameReader();
     (async () => {
         try {
@@ -1592,8 +1601,10 @@ async function startAuStream() {
                 }
             }
             scheduleReconnect("au ended");
+            if (!userDisconnected) scheduleReconnect("au ended");
         } catch (err) {
             scheduleReconnect(err.message || "au");
+            if (!userDisconnected) scheduleReconnect(err.message || "au");
         }
     })();
     waitingForKeyframe = true;
@@ -1855,6 +1866,7 @@ async function openDisplaySession() {
 }
 
 async function start() {
+    userDisconnected = false;
     applyTheme(currentTheme);
     applyTranslations();
     if (pairingAttempt) return;

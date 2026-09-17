@@ -58,9 +58,11 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
     }
 
     var lastAutoConnectedPort by remember { mutableStateOf<Int?>(null) }
+    var manualDisconnect by remember { mutableStateOf(false) }
 
     
     val leaveStream: () -> Unit = {
+        manualDisconnect = true
         activity?.intent?.removeExtra("host")
         if (!nav.popBackStack(Routes.DISCOVERY, inclusive = false)) {
             nav.navigate(Routes.DISCOVERY) {
@@ -73,6 +75,7 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
     LaunchedEffect(Unit) {
         UsbAccessoryManager.autoConnectEvent.collect { port ->
             if (prefs.autoConnectUsb && port != lastAutoConnectedPort) {
+            if (prefs.autoConnectUsb && !manualDisconnect && port != lastAutoConnectedPort) {
                 val curRoute = nav.currentDestination?.route
                 if (curRoute != Routes.STREAM) {
                     lastAutoConnectedPort = port
@@ -86,6 +89,7 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
 
     LaunchedEffect(Unit) {
         UsbAccessoryManager.accessoryDetachedEvent.collect {
+            manualDisconnect = false
             lastAutoConnectedPort = null
             val cur = nav.currentBackStackEntry?.destination?.route
             if (cur == Routes.STREAM) {
@@ -125,6 +129,7 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
             DiscoveryScreen(
                 viewModel = vm,
                 onConnect = { host, port ->
+                    manualDisconnect = false
                     nav.navigate(Routes.stream(host, port))
                 },
                 onSettings = { nav.navigate(Routes.SETTINGS) },

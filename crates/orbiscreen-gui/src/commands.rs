@@ -53,3 +53,8 @@ pub fn open_browser(url: String) -> Result<(), String> {
 pub async fn set_display_settings(width: u32, height: u32, fps: u32) -> Result<String, String> {
     DaemonClient::set_display_settings(width, height, fps).await
 }
+
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
