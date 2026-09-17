@@ -238,7 +238,6 @@ class StreamStats(
             }
         }
 
-        fun formatMs(ms: Int?): String = if (ms == null) "—" else "${ms} ms"
         fun formatMs(ms: Int?): String = if (ms == null) "-" else "${ms} ms"
     }
 }
