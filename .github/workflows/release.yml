@@ -221,23 +221,54 @@ jobs:
             orbiscreen-android-release.apk
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         if: startsWith(github.ref, 'refs/tags/')
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: Orbiscreen ${{ github.ref_name }}
-          body_path: release_notes.txt
-          generate_release_notes: false
-          files: |
-            orbiscreen-linux-x86_64.tar.gz
-            orbiscreen-linux-x86_64.tar.gz.sha256
-            orbiscreen_amd64.deb
-            orbiscreen_amd64.deb.sha256
-            orbiscreen_x86_64.rpm
-            orbiscreen_x86_64.rpm.sha256
-            orbiscreen-*.AppImage
-            orbiscreen-x86_64.AppImage.sha256
-            orbiscreen-android-release.apk
-            orbiscreen-android-release.apk.sha256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Creating GitHub Release for $TAG..."
+            gh release create "$TAG" \
+              --title "Orbiscreen $TAG" \
+              --notes-file release_notes.txt
+          else
+            echo "GitHub Release $TAG exists; updating metadata..."
+            gh release edit "$TAG" \
+              --title "Orbiscreen $TAG" \
+              --notes-file release_notes.txt
+          fi
+
+          echo "Uploading release assets..."
+          RELEASE_ASSETS=(
+            "orbiscreen-linux-x86_64.tar.gz"
+            "orbiscreen-linux-x86_64.tar.gz.sha256"
+            "orbiscreen_amd64.deb"
+            "orbiscreen_amd64.deb.sha256"
+            "orbiscreen_x86_64.rpm"
+            "orbiscreen_x86_64.rpm.sha256"
+            "orbiscreen-x86_64.AppImage"
+            "orbiscreen-x86_64.AppImage.sha256"
+            "orbiscreen-android-release.apk"
+            "orbiscreen-android-release.apk.sha256"
+          )
+
+          for asset in "${RELEASE_ASSETS[@]}"; do
+            echo "Uploading $asset..."
+            success=false
+            for attempt in 1 2 3; do
+              if gh release upload "$TAG" "$asset" --clobber; then
+                echo "Successfully uploaded $asset"
+                success=true
+                break
+              fi
+              echo "Upload of $asset failed (attempt $attempt/3). Retrying in 5s..."
+              sleep 5
+            done
+            if [ "$success" != "true" ]; then
+              echo "::error::Failed to upload $asset after 3 attempts"
+              exit 1
+            fi
+          done
 
 
