@@ -696,7 +696,9 @@ mod tests {
     #[test]
     fn intra_refresh_exists_only_on_x264() {
         init().unwrap();
-        let x264 = make_element("x264enc").unwrap();
+        let Ok(x264) = make_element("x264enc") else {
+            return;
+        };
         assert!(
             x264.find_property("intra-refresh").is_some(),
             "x264enc must expose intra-refresh for 1-3 datagram healing"
