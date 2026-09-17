@@ -496,7 +496,6 @@ fn build_router(state: AppState) -> Router {
         )
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_check))
         .route("/api/pair/request", post(api_pair_request))
-        .route("/api/pair/request", post(api_pair_request))
         .route("/api/pair/status", get(api_pair_status))
         .route("/api/pair", get(api_pair_list).post(api_pair_manage))
         .route("/", get(root_handler))
