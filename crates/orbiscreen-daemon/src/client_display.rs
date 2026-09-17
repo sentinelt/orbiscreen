@@ -6,9 +6,7 @@ use std::time::Duration;
 use orbiscreen_capture::kwin_virtual::{protocol_names_for, KwinVirtualCapture, KwinVirtualSpec};
 use orbiscreen_encode::{EncodeParams, Encoder, EncoderKind};
 use orbiscreen_input::{InputInjector, PointerEvent, VirtualTouchscreenSpec};
-use orbiscreen_transport::{
-    DisplayCommand, DisplayCtl, DisplayInfo, H264Packet, IncomingInput,
-};
+use orbiscreen_transport::{DisplayCommand, DisplayCtl, DisplayInfo, H264Packet, IncomingInput};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{info, warn};
 

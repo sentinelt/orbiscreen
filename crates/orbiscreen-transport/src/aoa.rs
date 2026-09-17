@@ -686,13 +686,7 @@ pub async fn supervisor(
                     let handle = tokio::task::spawn_blocking(move || {
                         run_accessory_bridge(&dev_clone, target_port, running_inner)
                     });
-                    active_bridges.insert(
-                        dev.dev_node.clone(),
-                        ActiveBridge {
-                            running,
-                            handle,
-                        },
-                    );
+                    active_bridges.insert(dev.dev_node.clone(), ActiveBridge { running, handle });
                 }
             } else if dev.vendor_id != 0x1d6b && is_android_candidate(dev) {
                 let key = (dev.vendor_id, dev.product_id, dev.bus_num, dev.dev_num);
