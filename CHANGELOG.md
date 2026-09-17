@@ -13,11 +13,9 @@ Full-project audit, security fixes, bug fixes, and dead-code/comment cleanup.
 - **Token fragments removed from logs (S2)**: auth-failure logs no longer include supplied/expected token prefixes; daemon startup logs no longer print token prefix/length; Android `HostApi` no longer logs token prefixes.
 
 ### 🐛 Bug Fixes
-- **Android input ordering (B1–B3)**: `VirtualCursor` bounds now update on resize under the same lock; pending trackpad deltas flush before click snapshots; delivery serialized through a single bounded ordered channel with motion-only coalescing — release events are never dropped. 10 new input regression tests (65 unit tests green).
 - **Android input ordering (B1-B3)**: `VirtualCursor` bounds now update on resize under the same lock; pending trackpad deltas flush before click snapshots; delivery serialized through a single bounded ordered channel with motion-only coalescing, release events are never dropped. 10 new input regression tests (65 unit tests green).
 - **Wrong-tablet input fallback (B4)**: `DisplayCommand::Input` no longer falls back to an arbitrary active/first session; input requires an unambiguous session match (fail closed with multi-session).
 - **Resize no longer displayless on failure (B5)**: display session resize opens the replacement before closing the old output, preserves viewer/attach counters, and initializes the idle deadline; rollback on open failure. Regression tests added.
-- **Host pointer semantics (B3-host)**: mouse buttons 6–8 map to distinct `BTN_SIDE/BTN_EXTRA/...` codes instead of falling through to `BTN_LEFT` (regression test); `release_tools` now releases all mouse buttons and keycodes plus the tablet on disconnect (no stuck keys/buttons); resize recreates the touchscreen/tablet uinput devices with fresh ABS axis ranges instead of only updating stored dimensions.
 - **Host pointer semantics (B3-host)**: mouse buttons 6-8 map to distinct `BTN_SIDE/BTN_EXTRA/...` codes instead of falling through to `BTN_LEFT` (regression test); `release_tools` now releases all mouse buttons and keycodes plus the tablet on disconnect (no stuck keys/buttons); resize recreates the touchscreen/tablet uinput devices with fresh ABS axis ranges instead of only updating stored dimensions.
 
 ### 📦 Packaging & Versions
