@@ -152,23 +152,16 @@ fn set_u32_if_present(el: &gstreamer::Element, name: &str, value: u32) {
     }
 }
 
-/// One frame of CBR, in milliseconds of VBV (`x264enc` `vbv-buf-capacity`).
 fn one_frame_vbv_ms(framerate: u32) -> u32 {
     let fps = framerate.max(1);
     1000u32.div_ceil(fps)
 }
 
-/// One frame of CBR, in kilobits (`vah264enc` `cpb-size`, `nvh264enc` `vbv-buffer-size`).
 fn one_frame_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
     let fps = framerate.max(1);
     bitrate_kbps.max(1).div_ceil(fps).max(1)
 }
 
-/// Cap VBV/CPB at one frame so a picture cannot occupy more than one frame-time of wire.
-///
-/// Unset, `x264enc` defaults to 600 ms and `vah264enc` auto-sizes ~1 s — at 8 Mbps that
-/// lets one IDR occupy hundreds of milliseconds on the air. `rc-lookahead` is forced to
-/// 0 so NVENC does not add a second delay on top of the buffer.
 fn configure_one_frame_vbv(encoder: &gstreamer::Element, bitrate_kbps: u32, framerate: u32) {
     let vbv_ms = one_frame_vbv_ms(framerate);
     let vbv_kb = one_frame_vbv_kb(bitrate_kbps, framerate);
@@ -706,7 +699,7 @@ mod tests {
         let x264 = make_element("x264enc").unwrap();
         assert!(
             x264.find_property("intra-refresh").is_some(),
-            "x264enc must expose intra-refresh for 1–3 datagram healing"
+            "x264enc must expose intra-refresh for 1-3 datagram healing"
         );
         if element_available("vah264enc") {
             let va = make_element("vah264enc").unwrap();
@@ -759,9 +752,7 @@ mod tests {
         if enc.encoder.find_property("cpb-size").is_some() {
             let got = enc.encoder.property::<u32>("cpb-size");
             assert_ne!(got, 0, "Encoder::new left vah264enc cpb-size at auto (0)");
-            // Intel vah264enc accepts the one-frame request in NULL, then
-            // reclamps CPB to ~2 s of bitrate once PLAYING. The write is
-            // still covered below; do not fail the live encoder on the clamp.
+
             if got != want_kb {
                 assert!(
                     got >= want_kb,

@@ -255,7 +255,9 @@ impl InputInjector {
 
     pub fn resize(&mut self, width: u32, height: u32) {
         if let InjectorInner::Uinput(injector) = &mut self.inner {
-            injector.resize(width, height);
+            if let Err(e) = injector.resize(width, height) {
+                tracing::warn!("uinput axis resize failed: {e}");
+            }
         }
     }
 

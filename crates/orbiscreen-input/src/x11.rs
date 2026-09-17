@@ -27,6 +27,9 @@ pub struct UinputInjector {
     mouse_keyboard: UinputDevice,
     touchscreen: UinputDevice,
     tablet: UinputDevice,
+    ts_name: String,
+    tab_name: String,
+    prod_offset: u16,
     width: u32,
     height: u32,
     cursor_x: f64,
@@ -139,6 +142,9 @@ impl UinputInjector {
             mouse_keyboard,
             touchscreen,
             tablet,
+            ts_name,
+            tab_name,
+            prod_offset,
             width: spec.width,
             height: spec.height,
             cursor_x: f64::from(spec.width) / 2.0,
@@ -159,11 +165,83 @@ impl UinputInjector {
         (cx, cy)
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.width = width;
-            self.height = height;
+    fn open_touchscreen(&self, width: u32, height: u32) -> Result<UinputDevice, InputError> {
+        let width_axis = AbsInfo::new(0, width.saturating_sub(1) as i32);
+        let height_axis = AbsInfo::new(0, height.saturating_sub(1) as i32);
+        let slot_axis = AbsInfo::new(0, (crate::MAX_TOUCH_SLOTS as i32) - 1);
+        let tracking_axis = AbsInfo::new(-1, i32::MAX);
+        Ok(UinputDevice::builder()?
+            .with_input_id(InputId::new(
+                Bus::VIRTUAL,
+                0x0BEE,
+                0x0002 + self.prod_offset,
+                0x0001,
+            ))?
+            .with_props([InputProp::DIRECT])?
+            .with_abs_axes([
+                AbsSetup::new(Abs::X, width_axis),
+                AbsSetup::new(Abs::Y, height_axis),
+                AbsSetup::new(Abs::MT_SLOT, slot_axis),
+                AbsSetup::new(Abs::MT_TRACKING_ID, tracking_axis),
+                AbsSetup::new(Abs::MT_POSITION_X, width_axis),
+                AbsSetup::new(Abs::MT_POSITION_Y, height_axis),
+            ])?
+            .with_keys([Key::BTN_TOUCH])?
+            .build(&self.ts_name)?)
+    }
+
+    fn open_tablet(&self, width: u32, height: u32) -> Result<UinputDevice, InputError> {
+        let res_w_axis = AbsInfo::new(0, width.saturating_sub(1) as i32).with_resolution(10);
+        let res_h_axis = AbsInfo::new(0, height.saturating_sub(1) as i32).with_resolution(10);
+        let pressure_axis = AbsInfo::new(0, PRESSURE_MAX);
+        let tilt_axis = AbsInfo::new(TILT_MIN, TILT_MAX);
+        let tablet_keys = vec![
+            Key::BTN_TOOL_PEN,
+            Key::BTN_TOOL_RUBBER,
+            Key::BTN_TOUCH,
+            Key::BTN_STYLUS,
+            Key::BTN_STYLUS2,
+            Key::BTN_LEFT,
+            Key::BTN_RIGHT,
+            Key::BTN_MIDDLE,
+        ];
+        Ok(UinputDevice::builder()?
+            .with_input_id(InputId::new(
+                Bus::VIRTUAL,
+                0x0BEE,
+                0x0003 + self.prod_offset,
+                0x0001,
+            ))?
+            .with_props([InputProp::DIRECT])?
+            .with_abs_axes([
+                AbsSetup::new(Abs::X, res_w_axis),
+                AbsSetup::new(Abs::Y, res_h_axis),
+                AbsSetup::new(Abs::PRESSURE, pressure_axis),
+                AbsSetup::new(Abs::TILT_X, tilt_axis),
+                AbsSetup::new(Abs::TILT_Y, tilt_axis),
+            ])?
+            .with_keys(tablet_keys)?
+            .build(&self.tab_name)?)
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), InputError> {
+        if width == 0 || height == 0 || (width == self.width && height == self.height) {
+            return Ok(());
         }
+        self.release_tools()?;
+        let touchscreen = self.open_touchscreen(width, height)?;
+        let tablet = self.open_tablet(width, height)?;
+        self.touchscreen = touchscreen;
+        self.tablet = tablet;
+        self.width = width;
+        self.height = height;
+        self.touch_slot_active = [false; crate::MAX_TOUCH_SLOTS];
+        self.touch_slot_id = [-1; crate::MAX_TOUCH_SLOTS];
+        self.touch_active_count = 0;
+        self.cursor_x = (self.cursor_x).clamp(0.0, f64::from(width.saturating_sub(1)));
+        self.cursor_y = (self.cursor_y).clamp(0.0, f64::from(height.saturating_sub(1)));
+        info!(width, height, "recreated uinput devices for resized output");
+        Ok(())
     }
 
     pub fn inject_pointer(&mut self, event: PointerEvent) -> Result<(), InputError> {
@@ -184,32 +262,25 @@ impl UinputInjector {
                 }
             }
             PointerEvent::RelativeMove { dx, dy } => {
-                self.cursor_x =
-                    (self.cursor_x + dx).clamp(0.0, f64::from(self.width.saturating_sub(1)));
-                self.cursor_y =
-                    (self.cursor_y + dy).clamp(0.0, f64::from(self.height.saturating_sub(1)));
-                let dx_i = dx.round() as i32;
-                let dy_i = dy.round() as i32;
-                if dx_i != 0 || dy_i != 0 {
+                let ((tx, ty), (edx, edy)) = clamped_relative(
+                    (self.cursor_x, self.cursor_y),
+                    (dx, dy),
+                    (self.width, self.height),
+                );
+                self.cursor_x = f64::from(tx);
+                self.cursor_y = f64::from(ty);
+                if edx != 0 || edy != 0 {
                     let events = vec![
-                        RelEvent::new(Rel::X, dx_i).into(),
-                        RelEvent::new(Rel::Y, dy_i).into(),
+                        RelEvent::new(Rel::X, edx).into(),
+                        RelEvent::new(Rel::Y, edy).into(),
                         SynEvent::new(Syn::REPORT).into(),
                     ];
                     self.mouse_keyboard.write_events(&events)?;
                 }
             }
             PointerEvent::Button { button, pressed } => {
-                if button == 0 || button > 8 {
+                let Some(btn_key) = button_key(button) else {
                     return Err(InputError::Uinput(format!("invalid button: {button}")));
-                }
-                let btn_key = match button {
-                    1 => Key::BTN_LEFT,
-                    2 => Key::BTN_MIDDLE,
-                    3 => Key::BTN_RIGHT,
-                    4 => Key::BTN_SIDE,
-                    5 => Key::BTN_EXTRA,
-                    _ => Key::BTN_LEFT,
                 };
                 let state = if pressed {
                     KeyState::PRESSED
@@ -331,7 +402,7 @@ impl UinputInjector {
         self.button_touch_down = false;
         let xi = self.cursor_x.round() as i32;
         let yi = self.cursor_y.round() as i32;
-        let events = vec![
+        let tablet_events = vec![
             AbsEvent::new(Abs::X, xi).into(),
             AbsEvent::new(Abs::Y, yi).into(),
             AbsEvent::new(Abs::PRESSURE, 0).into(),
@@ -341,7 +412,17 @@ impl UinputInjector {
             KEv::new(Key::BTN_TOOL_PEN, KeyState::RELEASED).into(),
             SynEvent::new(Syn::REPORT).into(),
         ];
-        self.tablet.write_events(&events)?;
+        self.tablet.write_events(&tablet_events)?;
+
+        let mut events: Vec<InputEvent> = Vec::new();
+        for raw in 0x110..=0x117u16 {
+            events.push(KEv::new(Key::from_raw(raw), KeyState::RELEASED).into());
+        }
+        for raw in 1..=248u16 {
+            events.push(KEv::new(Key::from_raw(raw), KeyState::RELEASED).into());
+        }
+        events.push(SynEvent::new(Syn::REPORT).into());
+        self.mouse_keyboard.write_events(&events)?;
         Ok(())
     }
 
@@ -398,5 +479,77 @@ pub fn button_code(button: u32) -> u32 {
         2 => 0x112,
         3 => 0x111,
         n => n + 0x10F,
+    }
+}
+
+fn button_key(button: u32) -> Option<Key> {
+    let raw = button_code(button);
+    (1..=8).contains(&button).then(|| Key::from_raw(raw as u16))
+}
+
+pub fn clamped_relative(
+    cursor: (f64, f64),
+    delta: (f64, f64),
+    bounds: (u32, u32),
+) -> ((i32, i32), (i32, i32)) {
+    let (max_x, max_y) = (
+        bounds.0.saturating_sub(1) as f64,
+        bounds.1.saturating_sub(1) as f64,
+    );
+    let target_x = (cursor.0 + delta.0).clamp(0.0, max_x);
+    let target_y = (cursor.1 + delta.1).clamp(0.0, max_y);
+    let from_x = cursor.0.round().clamp(0.0, max_x) as i32;
+    let from_y = cursor.1.round().clamp(0.0, max_y) as i32;
+    let to_x = target_x.round() as i32;
+    let to_y = target_y.round() as i32;
+    ((to_x, to_y), (to_x - from_x, to_y - from_y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{button_code, button_key, clamped_relative};
+
+    #[test]
+    fn buttons_six_through_eight_map_distinctly_not_left() {
+        let left = button_key(1).unwrap();
+        for button in 6..=8 {
+            assert_ne!(button_key(button), Some(left));
+        }
+        assert!(button_key(0).is_none());
+        assert!(button_key(9).is_none());
+        assert_eq!(button_code(6), 0x115);
+        assert_eq!(button_code(8), 0x117);
+    }
+
+    #[test]
+    fn motion_inside_bounds_passes_through() {
+        let (pos, delta) = clamped_relative((100.0, 100.0), (50.0, -20.0), (2560, 1600));
+        assert_eq!(pos, (150, 80));
+        assert_eq!(delta, (50, -20));
+    }
+
+    #[test]
+    fn motion_at_right_edge_is_truncated_not_leaked() {
+        let (pos, delta) = clamped_relative((2554.0, 800.0), (50.0, 0.0), (2560, 1600));
+        assert_eq!(pos, (2559, 800));
+        assert_eq!(delta, (5, 0));
+    }
+
+    #[test]
+    fn motion_at_top_left_edge_is_truncated() {
+        let (pos, delta) = clamped_relative((2.0, 3.0), (-40.0, -60.0), (2560, 1600));
+        assert_eq!(pos, (0, 0));
+        assert_eq!(delta, (-2, -3));
+    }
+
+    #[test]
+    fn repeated_overflow_deltas_stay_confined() {
+        let mut cursor = (2559.0, 1599.0);
+        for _ in 0..5 {
+            let (pos, delta) = clamped_relative(cursor, (200.0, 150.0), (2560, 1600));
+            assert_eq!(pos, (2559, 1599));
+            assert_eq!(delta, (0, 0));
+            cursor = (f64::from(pos.0), f64::from(pos.1));
+        }
     }
 }

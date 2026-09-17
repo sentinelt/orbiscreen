@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.29.1
+Version:        0.30.0
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +144,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Thu Sep 17 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.0-1
+- Release 0.30.0: Comprehensive full-project audit, LAN security hardening with loopback pairing tokens and credential store, strict Android input serialization and trackpad click delta flush, zero-inline-comment policy enforcement across all crates, and packaging modernized for Rust 1.92 and Ubuntu Noble.
+
 * Thu Sep 17 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.29.1-1
 - Release 0.29.1: Fix dual screen AOA supervisor port routing to daemon port; guard Android input against unauthenticated 401 request storms; fix KWin pointer binding for fluid mouse motion; add automatic session reconnection and extend post-viewer idle timeout.
 

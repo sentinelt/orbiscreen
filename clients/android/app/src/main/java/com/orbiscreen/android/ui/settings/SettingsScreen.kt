@@ -114,7 +114,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -285,7 +284,6 @@ fun SettingsScreen(
                 }
             }
 
-
             PreferenceSection(
                 title = stringResource(R.string.settings_display_session),
                 icon = Icons.Rounded.Visibility,
@@ -430,7 +428,6 @@ fun SettingsScreen(
                     },
                 )
             }
-
 
             PreferenceSection(
                 title = stringResource(R.string.about),

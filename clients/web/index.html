@@ -186,6 +186,7 @@
                 <label data-i18n="hostActions">Host Actions</label>
                 <div class="chipsRow">
                     <button id="btnActionResync" class="chipBtn" data-i18n="actionResync">Resync</button>
+                    <button id="btnSettingsHostApprovals" type="button" class="chipBtn">Host approvals</button>
                 </div>
             </div>
         </div>
@@ -222,8 +223,20 @@
                 </div>
                 <h3 id="statusTitle" class="statusTitle" data-i18n="statusConnecting">Connecting</h3>
                 <p id="statusSubtitle" class="statusSubtitle" data-i18n="statusConnectingSub">Connecting to Linux host...</p>
+                <section id="pairingPanel" class="pairingPanel hidden" aria-label="Pair this device">
+                    <p>Pair only with a host whose HTTPS certificate you have verified.</p>
+                    <label for="pairingName">Device name</label>
+                    <input id="pairingName" type="text" maxlength="32" value="Web browser" autocomplete="off" />
+                    <div class="pairingActions">
+                        <button id="btnPair" type="button" class="chipBtn">Pair this device</button>
+                        <button id="btnCancelPair" type="button" class="chipBtn hidden">Stop waiting</button>
+                    </div>
+                    <p id="pairingStatus" role="status" aria-live="polite"></p>
+                    <p id="pairingRequestId" class="pairingIdentity"></p>
+                </section>
+                <button id="btnHostApprovals" type="button" class="chipBtn">Host approvals</button>
                 <div id="tokenRow" class="tokenRow hidden">
-                    <input type="text" id="tokenInput" placeholder="Session token..." data-i18n-placeholder="tokenPlaceholder" />
+                    <input type="password" id="tokenInput" autocomplete="off" spellcheck="false" placeholder="Session token..." data-i18n-placeholder="tokenPlaceholder" />
                     <button id="btnConnect" data-i18n="btnConnect">Connect</button>
                 </div>
                 <button id="btnReconnect" class="btnReconnect hidden">
@@ -233,6 +246,27 @@
                     <span data-i18n="btnReconnect">Reconnect</span>
                 </button>
             </div>
+        </div>
+    </div>
+
+    <div id="hostApprovalModal" class="settingsModal hidden" role="dialog" aria-modal="true" aria-labelledby="hostApprovalTitle">
+        <div class="settingsCard pairingAdminCard">
+            <div class="settingsHeader">
+                <h2 id="hostApprovalTitle">Host approvals</h2>
+                <button id="btnCloseApprovals" type="button" class="chipBtn">Close</button>
+            </div>
+            <p>On the host, paste the admin token from the Orbiscreen config token file. A paired device credential cannot approve devices. The admin token is never saved.</p>
+            <label for="hostAdminToken">Host admin token</label>
+            <input id="hostAdminToken" type="password" autocomplete="off" spellcheck="false" />
+            <div class="pairingActions">
+                <button id="btnLoadApprovals" type="button" class="chipBtn">Load / refresh devices</button>
+            </div>
+            <p id="hostApprovalStatus" role="status" aria-live="polite"></p>
+            <p>Approve only after comparing the device name, peer address and full request ID with the requesting device.</p>
+            <h3>Pairing requests</h3>
+            <div id="hostPairingRequests" class="pairingList"></div>
+            <h3>Paired devices</h3>
+            <div id="hostPairedClients" class="pairingList"></div>
         </div>
     </div>
 

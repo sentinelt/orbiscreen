@@ -13,6 +13,8 @@ data class ClientIdentity(
     val key: String,
     val width: Int,
     val height: Int,
+    
+    val bitrateKbps: Int,
 ) {
     companion object {
         fun from(context: Context): ClientIdentity {
@@ -22,7 +24,29 @@ data class ClientIdentity(
                 ?.takeIf { it.isNotEmpty() }
                 ?: Build.MODEL.ifBlank { "Android" }
             val (w, h) = nativePixels(context)
-            return ClientIdentity(name = name, key = deviceKey(context), width = w, height = h)
+            return ClientIdentity(
+                name = name,
+                key = deviceKey(context),
+                width = w,
+                height = h,
+                bitrateKbps = detectedBitrateKbps(context),
+            )
+        }
+
+        private fun detectedBitrateKbps(context: Context): Int {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            val memoryClassMb = am?.memoryClass ?: 64
+            val (w, h) = nativePixels(context)
+            val pixelsMbps = (w.toDouble() * h) / 1_000_000.0
+            
+            val tierMbps = when {
+                memoryClassMb >= 256 -> 20.0
+                memoryClassMb >= 192 -> 14.0
+                memoryClassMb >= 128 -> 10.0
+                else -> 6.0
+            }
+            val scaled = tierMbps * (pixelsMbps / 4.0).coerceIn(0.5, 1.5)
+            return (scaled * 1000).toInt().coerceIn(4_000, 20_000)
         }
 
         private fun deviceKey(context: Context): String {

@@ -12,6 +12,7 @@ VERSION="${1:-$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')}"
 ARCH="x86_64"
 RPM_NAME="orbiscreen-${VERSION}-1.${ARCH}.rpm"
 BUILD_ROOT="target/rpm-staging"
+GUI_DEFINE=""
 
 echo "[Orbiscreen] Building RPM package for Orbiscreen v${VERSION} (${ARCH})..."
 
@@ -25,19 +26,20 @@ mkdir -p target/rpmbuild/SPECS
 mkdir -p target/rpmbuild/SRPMS
 mkdir -p target/tmp
 
-if [ ! -f target/release/orbiscreen ] || [ ! -f target/release/orbiscreen-gui ]; then
+if [ "${ORBISCREEN_FORCE_REBUILD:-0}" = "1" ] || [ ! -f target/release/orbiscreen ]; then
     echo "[Orbiscreen] Building release binaries for RPM..."
-    cargo build --release --workspace
+    cargo build --release --workspace --locked
 fi
 
 cp -f target/release/orbiscreen "${BUILD_ROOT}/usr/bin/"
 if [ -f target/release/orbiscreen-gui ]; then
     cp -f target/release/orbiscreen-gui "${BUILD_ROOT}/usr/bin/"
+    GUI_DEFINE="--define _orbiscreen_gui 1"
 fi
 
 # ── Build RPM Package ──
 if command -v rpmbuild >/dev/null 2>&1; then
-    rpmbuild -bb \
+    rpmbuild -bb $GUI_DEFINE \
         --buildroot "$(pwd)/${BUILD_ROOT}" \
         --define "_topdir $(pwd)/target/rpmbuild" \
         --define "_tmppath $(pwd)/target/tmp" \

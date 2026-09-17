@@ -249,6 +249,263 @@ const toastEl = document.getElementById("toast");
 const tokenRow = document.getElementById("tokenRow");
 const tokenInput = document.getElementById("tokenInput");
 const btnConnect = document.getElementById("btnConnect");
+const pairingPanel = document.getElementById("pairingPanel");
+const pairingName = document.getElementById("pairingName");
+const pairingStatus = document.getElementById("pairingStatus");
+const pairingRequestId = document.getElementById("pairingRequestId");
+const btnPair = document.getElementById("btnPair");
+const btnCancelPair = document.getElementById("btnCancelPair");
+const hostApprovalModal = document.getElementById("hostApprovalModal");
+const hostAdminToken = document.getElementById("hostAdminToken");
+const hostApprovalStatus = document.getElementById("hostApprovalStatus");
+const hostPairingRequests = document.getElementById("hostPairingRequests");
+const hostPairedClients = document.getElementById("hostPairedClients");
+const btnLoadApprovals = document.getElementById("btnLoadApprovals");
+let pairingAttempt = null;
+let adminController = null;
+let adminBusy = false;
+
+function showPairing(message = "Choose Pair this device, then approve the matching request on the host.") {
+    destroyPlayer();
+    setOverlayState("unsupported", "Host approval required", "Pair this device to connect.");
+    pairingPanel.classList.remove("hidden");
+    pairingStatus.textContent = message;
+    btnPair.disabled = window.location.protocol !== "https:" || !!pairingAttempt;
+    if (window.location.protocol !== "https:") {
+        pairingStatus.textContent = "Pairing requires HTTPS. Open the host's HTTPS client and verify its certificate first.";
+    }
+}
+
+async function pairingFetch(path, options = {}) {
+    if (window.location.protocol !== "https:") throw new Error("Pairing requires HTTPS.");
+    const response = await fetch(path, {
+        ...options,
+        signal: AbortSignal.any([AbortSignal.timeout(15000), ...(options.signal ? [options.signal] : [])]),
+        cache: "no-store",
+        credentials: "omit",
+        redirect: "error",
+        referrerPolicy: "no-referrer",
+    });
+    if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("Access denied. Host administration requires the admin token from the host config token file.");
+        }
+        throw new Error(`Pairing request failed (HTTP ${response.status}). Refresh or try again.`);
+    }
+    return response.status === 204 ? {} : response.json();
+}
+
+function stopPairing() {
+    if (pairingAttempt) {
+        clearTimeout(pairingAttempt.timer);
+        pairingAttempt.controller.abort();
+        pairingAttempt = null;
+    }
+    btnPair.disabled = window.location.protocol !== "https:";
+    pairingName.disabled = false;
+    btnCancelPair.classList.add("hidden");
+    pairingRequestId.textContent = "";
+}
+
+async function pollPairing(attempt) {
+    if (pairingAttempt !== attempt) return;
+    try {
+        if (Date.now() >= attempt.expiresAt) throw new Error("Approval timed out. Request pairing again.");
+        const data = await pairingFetch(`/api/pair/status?id=${encodeURIComponent(attempt.id)}`, {
+            signal: attempt.controller.signal,
+        });
+        if (pairingAttempt !== attempt) return;
+        if (data.status === "pending") {
+            attempt.timer = setTimeout(() => pollPairing(attempt), 2000);
+            return;
+        }
+        if (data.status === "approved" && typeof data.credential === "string" && data.credential.length > 0) {
+            authToken = data.credential;
+            stopPairing();
+            pairingPanel.classList.add("hidden");
+            tokenRow.classList.add("hidden");
+            await start().catch(() => {
+                setOverlayState("error", "Paired", "Approval received, but connecting failed. Reconnect to retry.");
+            });
+            return;
+        }
+        throw new Error(data.status === "unknown"
+            ? "Request denied, expired or already claimed. Request pairing again."
+            : "Invalid approval response. Request pairing again.");
+    } catch (error) {
+        if (pairingAttempt !== attempt) return;
+        stopPairing();
+        showPairing(error.message || "Could not check approval. Request pairing again.");
+    }
+}
+
+btnPair.addEventListener("click", async () => {
+    if (pairingAttempt || window.location.protocol !== "https:") return;
+    const name = pairingName.value.trim();
+    if (!name) {
+        pairingStatus.textContent = "Enter a device name to identify this request on the host.";
+        pairingName.focus();
+        return;
+    }
+    destroyPlayer();
+    const attempt = { controller: new AbortController(), timer: null, expiresAt: Date.now() + 600000 };
+    pairingAttempt = attempt;
+    btnPair.disabled = true;
+    pairingName.disabled = true;
+    btnCancelPair.classList.remove("hidden");
+    pairingStatus.textContent = "Requesting host approval…";
+    try {
+        const data = await pairingFetch("/api/pair/request", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+            signal: attempt.controller.signal,
+        });
+        if (pairingAttempt !== attempt) return;
+        if (data.status !== "pending" || typeof data.request_id !== "string" || !data.request_id) {
+            throw new Error("Invalid pairing response. Request pairing again.");
+        }
+        attempt.id = data.request_id;
+        pairingStatus.textContent = `Waiting for host approval for ${name}. Compare this request ID on the host; do not share it elsewhere.`;
+        pairingRequestId.textContent = `Request ID: ${data.request_id}`;
+        attempt.timer = setTimeout(() => pollPairing(attempt), 2000);
+    } catch (error) {
+        if (pairingAttempt !== attempt) return;
+        stopPairing();
+        showPairing(error.message || "Could not request pairing.");
+    }
+});
+
+btnCancelPair.addEventListener("click", () => {
+    stopPairing();
+    showPairing("Stopped waiting. The host may still see the request; deny it there before trying again.");
+});
+
+function closeHostApprovals() {
+    if (adminController) adminController.abort();
+    adminController = null;
+    adminBusy = false;
+    hostAdminToken.value = "";
+    hostApprovalStatus.textContent = "";
+    hostPairingRequests.replaceChildren();
+    hostPairedClients.replaceChildren();
+    hostApprovalModal.classList.add("hidden");
+    btnLoadApprovals.disabled = false;
+}
+
+function pairingMetadata(parent, label, value) {
+    const line = document.createElement("p");
+    line.className = "pairingIdentity";
+    line.textContent = `${label}: ${typeof value === "string" ? value : "Unknown"}`;
+    parent.append(line);
+}
+
+function renderPairingList(container, entries, requests) {
+    container.replaceChildren();
+    if (!entries.length) {
+        const empty = document.createElement("p");
+        empty.textContent = requests ? "No pending requests." : "No paired devices.";
+        container.append(empty);
+        return;
+    }
+    for (const entry of entries) {
+        if (!entry || typeof entry !== "object") continue;
+        const id = requests ? entry.request_id : entry.client_id;
+        const card = document.createElement("section");
+        card.className = "pairingDevice";
+        pairingMetadata(card, "Device", entry.label || entry.name);
+        if (requests) pairingMetadata(card, "Peer", entry.peer);
+        pairingMetadata(card, requests ? "Request ID" : "Client ID", id);
+        pairingMetadata(card, "Status", requests ? (entry.approved ? "approved, awaiting claim" : "pending") : entry.status);
+        const actions = document.createElement("div");
+        actions.className = "pairingActions";
+        const allowed = requests ? (entry.approved ? [] : ["approve", "deny"]) : (entry.status === "approved" ? ["revoke"] : []);
+        for (const action of allowed) {
+            if (typeof id !== "string" || !id) continue;
+            const name = entry.label || entry.name;
+            if (action === "approve" && (typeof entry.peer !== "string" || !entry.peer || typeof name !== "string" || !name)) continue;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "chipBtn";
+            button.textContent = action === "approve" ? "Approve this device" : action === "deny" ? "Deny" : "Revoke";
+            button.addEventListener("click", () => loadHostApprovals({ action, id }));
+            actions.append(button);
+        }
+        card.append(actions);
+        container.append(card);
+    }
+}
+
+async function loadHostApprovals(action = null) {
+    if (adminBusy) return;
+    const token = hostAdminToken.value.trim();
+    if (!token) {
+        hostApprovalStatus.textContent = "Paste the host admin token first. Device credentials cannot administer pairing.";
+        hostAdminToken.focus();
+        return;
+    }
+    adminBusy = true;
+    const controller = new AbortController();
+    adminController = controller;
+    btnLoadApprovals.disabled = true;
+    hostApprovalModal.querySelectorAll(".pairingDevice button").forEach((button) => { button.disabled = true; });
+    hostApprovalStatus.textContent = action ? "Updating device…" : "Loading devices…";
+    try {
+        const options = { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal };
+        if (action) {
+            await pairingFetch("/api/pair", {
+                ...options,
+                method: "POST",
+                headers: { ...options.headers, "Content-Type": "application/json" },
+                body: JSON.stringify(action),
+            });
+        }
+        const data = await pairingFetch("/api/pair", options);
+        if (adminController !== controller) return;
+        if (!Array.isArray(data.requests) || !Array.isArray(data.clients)) throw new Error("Invalid device list.");
+        renderPairingList(hostPairingRequests, data.requests, true);
+        renderPairingList(hostPairedClients, data.clients, false);
+        hostApprovalStatus.textContent = action ? "Device updated. List refreshed." : "Compare each request with the requesting device before approving.";
+    } catch (error) {
+        if (adminController !== controller) return;
+        hostPairingRequests.replaceChildren();
+        hostPairedClients.replaceChildren();
+        hostApprovalStatus.textContent = error.message || "Could not load devices.";
+    } finally {
+        if (adminController === controller) {
+            adminController = null;
+            adminBusy = false;
+            btnLoadApprovals.disabled = false;
+        }
+    }
+}
+
+function openHostApprovals() {
+    releaseControl();
+    settingsModal.classList.add("hidden");
+    hostApprovalModal.classList.remove("hidden");
+    hostApprovalStatus.textContent = window.location.protocol === "https:" ? "" : "Host approvals require HTTPS.";
+    btnLoadApprovals.disabled = window.location.protocol !== "https:";
+    hostAdminToken.disabled = window.location.protocol !== "https:";
+    hostAdminToken.focus();
+}
+document.getElementById("btnHostApprovals").addEventListener("click", openHostApprovals);
+document.getElementById("btnSettingsHostApprovals").addEventListener("click", openHostApprovals);
+document.getElementById("btnCloseApprovals").addEventListener("click", closeHostApprovals);
+btnLoadApprovals.addEventListener("click", () => loadHostApprovals());
+hostAdminToken.addEventListener("input", () => {
+    if (adminController) adminController.abort();
+    adminController = null;
+    adminBusy = false;
+    btnLoadApprovals.disabled = window.location.protocol !== "https:";
+    hostPairingRequests.replaceChildren();
+    hostPairedClients.replaceChildren();
+    hostApprovalStatus.textContent = "";
+});
+window.addEventListener("pagehide", () => {
+    stopPairing();
+    closeHostApprovals();
+});
 
 let displayWidth = 1920;
 let displayHeight = 1080;
@@ -305,6 +562,7 @@ function updateInfoDisplay() {
     const delayText = (lastDelayMs != null && lastDelayMs >= 0)
         ? `delay ${lastDelayMs}ms`
         : "delay —";
+        : "delay -";
     const narrow = window.matchMedia("(orientation: portrait), (max-width: 720px)").matches;
     const infoStr = narrow
         ? delayText
@@ -464,7 +722,7 @@ stageEl.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     try {
         event.currentTarget.setPointerCapture(event.pointerId);
-    } catch (_) { /* capture is best-effort on older WebViews */ }
+    } catch (_) {  }
     const { x, y } = mapPointer(event);
     if (event.pointerType === "pen") {
         sendStylus(x, y, event.pressure, event.tiltX, event.tiltY);
@@ -515,7 +773,7 @@ stageEl.addEventListener("pointerup", (event) => {
     event.preventDefault();
     try {
         event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch (_) { /* already released */ }
+    } catch (_) {  }
     const { x, y } = mapPointer(event);
     if (event.pointerType === "pen") {
         sendStylus(x, y, 0, event.tiltX, event.tiltY);
@@ -570,6 +828,7 @@ window.addEventListener("keydown", (event) => {
         }
         keyboardDrawer.classList.add("hidden");
         settingsModal.classList.add("hidden");
+        closeHostApprovals();
         unlatchAll();
         return;
     }
@@ -764,7 +1023,6 @@ if (btnLock) {
     });
 }
 
-
 if (btnSendCad) {
     btnSendCad.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -795,8 +1053,8 @@ if (btnDisconnect) {
 if (btnReconnect) {
     btnReconnect.addEventListener("click", (e) => {
         e.stopPropagation();
-        setOverlayState("connecting", t("statusConnecting"), t("statusConnectingSub"));
-        startStream();
+        if (pairingAttempt) return;
+        start().catch(() => showPairing("Could not reconnect. Try pairing again."));
     });
 }
 
@@ -804,14 +1062,18 @@ if (btnConnect && tokenInput) {
     btnConnect.addEventListener("click", () => {
         const val = tokenInput.value.trim();
         if (val) {
+            if (window.location.protocol !== "https:") return;
+            stopPairing();
             authToken = val;
+            tokenInput.value = "";
             tokenRow.classList.add("hidden");
-            startStream();
+            start().catch(() => showPairing("Could not connect. Try pairing again."));
         }
     });
 }
 
 function sendInput(payload) {
+    if (!authToken || !displaySessionId || window.location.protocol !== "https:") return;
     const headers = { "content-type": "application/json" };
     if (authToken) headers.authorization = `Bearer ${authToken}`;
     if (displaySessionId) headers["x-orbiscreen-session"] = displaySessionId;
@@ -1154,7 +1416,11 @@ function destroyPlayer() {
 
 async function fetchClientConfig() {
     try {
-        const cfg = await fetch("/client/config.json");
+        const cfg = await fetch("/client/config.json", {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+            cache: "no-store",
+            redirect: "error",
+        });
         if (cfg.ok) return await cfg.json();
     } catch (error) {
         console.warn("config.json fetch failed:", error);
@@ -1171,7 +1437,7 @@ async function refreshToken() {
 }
 
 function scheduleReconnect(reason) {
-    if (reconnectTimer) return;
+    if (reconnectTimer || pairingAttempt || !authToken) return;
     destroyPlayer();
     setOverlayState("connecting", "Connecting", `Reconnecting (${reason})…`);
     reconnectTimer = setTimeout(() => {
@@ -1298,12 +1564,17 @@ function feedAccessUnit(msg) {
 
 async function startAuStream() {
     const params = new URLSearchParams();
-    if (authToken) params.set("token", authToken);
     if (displaySessionId) params.set("session", displaySessionId);
     const qs = params.toString();
     const res = await fetch(qs ? `/au?${qs}` : "/au", {
         headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
     });
+    if (res.status === 401 || res.status === 403) {
+        authToken = "";
+        displaySessionId = "";
+        showPairing("Credential rejected or revoked. Request host approval again.");
+        return;
+    }
     if (!res.ok || !res.body) {
         throw new Error(`au stream ${res.status}`);
     }
@@ -1339,7 +1610,12 @@ async function startAuStream() {
 }
 
 async function startStream(opts = {}) {
-    if (!window.isSecureContext) {
+    if (pairingAttempt) return;
+    if (!authToken) {
+        showPairing();
+        return;
+    }
+    if (window.location.protocol !== "https:") {
         const host = (wtConfig && OrbiAnnexB.pickWtHost(wtConfig, window.location.hostname))
             || window.location.hostname
             || "host";
@@ -1477,7 +1753,6 @@ async function startStream(opts = {}) {
                         if (msg.type === "video") feedAccessUnit(msg);
                     }
                 } catch (err) {
-                    // Video can still arrive on the control stream or /au.
                     console.warn("webtransport datagram:", err);
                 }
             })();
@@ -1556,6 +1831,12 @@ async function openDisplaySession() {
             },
             body: JSON.stringify(body),
         });
+        if (response.status === 401 || response.status === 403) {
+            authToken = "";
+            displaySessionId = "";
+            showPairing("Credential rejected or revoked. Request host approval again.");
+            return;
+        }
         if (!response.ok) return;
         const data = await response.json();
         if (data && data.id) {
@@ -1576,6 +1857,11 @@ async function openDisplaySession() {
 async function start() {
     applyTheme(currentTheme);
     applyTranslations();
+    if (pairingAttempt) return;
+    if (window.location.protocol !== "https:") {
+        showPairing();
+        return;
+    }
     if (typeof VideoDecoder !== "function") {
         unsupportedPlayback();
         return;
@@ -1592,7 +1878,11 @@ async function start() {
         }
     }
     try {
-        const response = await fetch("/api/info");
+        const response = await fetch("/api/info", {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+            cache: "no-store",
+            redirect: "error",
+        });
         if (response.ok) {
             const apiInfo = await response.json();
             if (Number.isFinite(apiInfo?.display_width) && Number.isFinite(apiInfo?.display_height)) {
@@ -1608,12 +1898,21 @@ async function start() {
         console.warn("api/info fetch failed:", error);
     }
 
+    if (!authToken) {
+        showPairing();
+        return;
+    }
+    pairingPanel.classList.add("hidden");
+    displaySessionId = "";
     await openDisplaySession();
+    if (!authToken) return;
+    if (!displaySessionId) {
+        setOverlayState("error", "Session unavailable", "Could not open a display session. Reconnect to retry.");
+        return;
+    }
     updateInfoDisplay();
     startStream();
 }
-
-
 
 start().catch((error) => {
     setOverlayState("error", "Initialization Failed", error.message);

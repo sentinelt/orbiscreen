@@ -3,11 +3,6 @@
 
 package com.orbiscreen.android.player
 
-/**
- * Holds completed access units that arrived ahead of lastSeq+1 so a
- * one-frame datagram reorder can play in order. Requests a gap (IDR)
- * only after [holeWaitMs] without the missing seq.
- */
 class AuReorder(
     private val holeWaitMs: Long = HOLE_WAIT_MS,
     private val maxHeld: Int = MAX_HELD,
@@ -35,7 +30,7 @@ class AuReorder(
         holeSince = 0L
     }
 
-    /** Reliable IDR has no datagram seq; the next P starts a new GOP. */
+    
     fun onReliableKeyframe() {
         reset()
     }

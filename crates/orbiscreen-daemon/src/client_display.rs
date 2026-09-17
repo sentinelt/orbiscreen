@@ -26,6 +26,8 @@ struct Session {
     info: DisplayInfo,
     client_name: String,
     client_key: Option<String>,
+
+    bitrate_kbps: Option<u32>,
     video_tx: broadcast::Sender<H264Packet>,
     idr_tx: mpsc::Sender<()>,
     input_tx: mpsc::Sender<IncomingInput>,
@@ -97,6 +99,7 @@ async fn handle_cmd(
             key,
             width,
             height,
+            bitrate_kbps,
             reply,
         } => {
             if let Some(ref k) = key {
@@ -110,7 +113,7 @@ async fn handle_cmd(
                     return;
                 }
             }
-            let result = open_session(cfg, name, key, width, height).await;
+            let result = open_session(cfg, name, key, width, height, bitrate_kbps).await;
             if let Ok(session) = result {
                 let info = session.info.clone();
                 idle_at.insert(info.id.clone(), tokio::time::Instant::now());
@@ -139,7 +142,7 @@ async fn handle_cmd(
                     } else {
                         1080
                     };
-                    match open_session(cfg, "default".to_string(), None, w, h).await {
+                    match open_session(cfg, "default".to_string(), None, w, h, None).await {
                         Ok(session) => {
                             let sid = session.info.id.clone();
                             idle_at.insert(sid.clone(), tokio::time::Instant::now());
@@ -197,18 +200,41 @@ async fn handle_cmd(
             height,
             reply,
         } => {
-            let Some(old) = sessions.remove(&id) else {
+            let Some(old) = sessions.get(&id) else {
                 let _ = reply.send(Err("unknown session".into()));
                 return;
             };
-            let name = old.client_name.clone();
-            let key = old.client_key.clone();
-            close_session_inner(old);
-            match open_session(cfg, name, key, width, height).await {
-                Ok(mut session) => {
-                    session.info.id = id.clone();
+            if old.info.width == width && old.info.height == height {
+                let _ = reply.send(Ok(old.info.clone()));
+                return;
+            }
+            let request = ResizeCarry {
+                name: old.client_name.clone(),
+                key: old.client_key.clone(),
+                bitrate_kbps: old.bitrate_kbps,
+                viewers: old.viewers,
+                ever_attached: old.ever_attached,
+            };
+            match open_session(
+                cfg,
+                request.name.clone(),
+                request.key.clone(),
+                width,
+                height,
+                request.bitrate_kbps,
+            )
+            .await
+            {
+                Ok(session) => {
+                    let Some(old) = sessions.remove(&id) else {
+                        let _ = reply.send(Err("unknown session".into()));
+                        return;
+                    };
+                    close_session_inner(old);
                     let info = session.info.clone();
-                    sessions.insert(id, session);
+                    let sid = info.id.clone();
+                    let carry = adopt_resize_state(session, request, idle_at);
+                    sessions.insert(sid, carry);
                     let _ = reply.send(Ok(info));
                 }
                 Err(e) => {
@@ -222,14 +248,7 @@ async fn handle_cmd(
             let _ = reply.send(info);
         }
         DisplayCommand::Input { id, event } => {
-            let chosen = resolve_id(sessions, id.as_deref()).or_else(|| {
-                sessions
-                    .iter()
-                    .filter(|(_, s)| s.viewers > 0)
-                    .map(|(k, _)| k.clone())
-                    .next()
-                    .or_else(|| sessions.keys().next().cloned())
-            });
+            let chosen = resolve_id(sessions, id.as_deref());
             if let Some(sid) = chosen {
                 if let Some(session) = sessions.get(&sid) {
                     let _ = session.input_tx.try_send(event);
@@ -238,7 +257,7 @@ async fn handle_cmd(
                 warn!(
                     session = ?id,
                     open = sessions.len(),
-                    "dropping input; no matching display session"
+                    "dropping input; no unambiguous display session"
                 );
             }
         }
@@ -247,6 +266,30 @@ async fn handle_cmd(
 
 fn resolve_id(sessions: &HashMap<String, Session>, id: Option<&str>) -> Option<String> {
     resolve_session_id(sessions.keys().map(String::as_str), id)
+}
+
+struct ResizeCarry {
+    name: String,
+    key: Option<String>,
+    bitrate_kbps: Option<u32>,
+    viewers: usize,
+    ever_attached: bool,
+}
+
+fn adopt_resize_state(
+    mut session: Session,
+    carry: ResizeCarry,
+    idle_at: &mut HashMap<String, tokio::time::Instant>,
+) -> Session {
+    session.viewers = carry.viewers;
+    session.ever_attached = carry.ever_attached;
+    let deadline = if session.ever_attached {
+        tokio::time::Instant::now() + IDLE_AFTER_LAST_VIEWER
+    } else {
+        tokio::time::Instant::now() + WAITING_FOR_FIRST_VIEWER
+    };
+    idle_at.insert(session.info.id.clone(), deadline);
+    session
 }
 
 fn resolve_session_id<'a>(
@@ -284,6 +327,7 @@ async fn open_session(
     key: Option<String>,
     width: u32,
     height: u32,
+    bitrate_kbps: Option<u32>,
 ) -> Result<Session, String> {
     let width = width.clamp(320, 7680);
     let height = height.clamp(240, 4320);
@@ -331,7 +375,8 @@ async fn open_session(
 
     let mut encoder = Encoder::new(EncodeParams {
         kind: cfg.encode_kind,
-        bitrate_kbps: cfg.bitrate_kbps,
+
+        bitrate_kbps: bitrate_kbps.unwrap_or(cfg.bitrate_kbps),
         width: actual_w,
         height: actual_h,
         framerate: cfg.refresh_hz,
@@ -394,6 +439,7 @@ async fn open_session(
         },
         client_name: name,
         client_key: key,
+        bitrate_kbps,
         video_tx,
         idr_tx,
         input_tx,
@@ -545,8 +591,6 @@ fn close_session_inner(mut session: Session) {
     }
 }
 
-/// Parse child `eventN` nodes from KWin's InputDevice introspect XML.
-/// libinput assigns uinput devices well past event63 (often event256+).
 pub(crate) fn event_paths_from_introspect(xml: &str) -> Vec<String> {
     let mut paths = Vec::new();
     let mut rest = xml;
@@ -661,7 +705,83 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::event_paths_from_introspect;
+    use super::{adopt_resize_state, event_paths_from_introspect, ResizeCarry};
+    use crate::client_display::Session;
+    use orbiscreen_transport::IncomingInput;
+    use std::collections::HashMap;
+
+    fn carry(name: &str, viewers: usize, ever_attached: bool) -> ResizeCarry {
+        ResizeCarry {
+            name: name.to_string(),
+            key: None,
+            bitrate_kbps: None,
+            viewers,
+            ever_attached,
+        }
+    }
+
+    fn session_with(id: &str, ever_attached: bool) -> Session {
+        use tokio::sync::{broadcast, watch};
+        let (video_tx, _) = broadcast::channel(1);
+        let (input_tx, _) = tokio::sync::mpsc::channel::<IncomingInput>(1);
+        let (idr_tx, _) = tokio::sync::mpsc::channel::<()>(1);
+        let (shutdown, _) = watch::channel(false);
+        Session {
+            info: orbiscreen_transport::DisplayInfo {
+                id: id.to_string(),
+                name: "test".into(),
+                connector: "Virtual-TEST".into(),
+                width: 1280,
+                height: 720,
+                encoder: "auto".into(),
+            },
+            client_name: "test".into(),
+            client_key: None,
+            bitrate_kbps: None,
+            video_tx,
+            idr_tx,
+            input_tx,
+            viewers: 0,
+            ever_attached,
+            shutdown,
+            capture: None,
+            encoder: None,
+        }
+    }
+
+    #[test]
+    fn resize_swap_preserves_viewers_and_deadline() {
+        let mut idle_at = HashMap::new();
+        let fresh = adopt_resize_state(
+            session_with("a", false),
+            carry("test", 0, false),
+            &mut idle_at,
+        );
+        assert_eq!(fresh.viewers, 0);
+        assert!(!fresh.ever_attached);
+        let waiting = idle_at.get("a").copied().unwrap();
+        let mut idle_at2 = HashMap::new();
+        let viewed = adopt_resize_state(
+            session_with("b", true),
+            carry("test", 2, true),
+            &mut idle_at2,
+        );
+        assert_eq!(viewed.viewers, 2);
+        assert!(viewed.ever_attached);
+        let after = idle_at2.get("b").copied().unwrap();
+        assert!(after > waiting);
+    }
+
+    #[test]
+    fn resize_swap_initializes_idle_deadline_for_never_attached() {
+        let mut idle_at = HashMap::new();
+        adopt_resize_state(
+            session_with("c", false),
+            carry("test", 0, false),
+            &mut idle_at,
+        );
+        assert!(idle_at.contains_key("c"));
+    }
 
     #[test]
     fn resolve_id_does_not_steal_the_only_session_when_id_is_unknown() {
@@ -681,7 +801,7 @@ mod tests {
 
     #[test]
     fn introspect_xml_includes_high_event_nodes() {
-        let xml = r#"<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+        let xml = r#"<!DOCTYPE node PUBLIC "-
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
   <interface name="org.freedesktop.DBus.Introspectable"/>

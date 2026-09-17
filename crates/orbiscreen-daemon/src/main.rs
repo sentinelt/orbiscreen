@@ -1276,11 +1276,7 @@ async fn run_start_per_client(
         Some(load_or_create_token()),
     );
     let token = transport.token().to_owned();
-    info!(
-        "stream access token active ({len} chars, prefix={prefix}); clients fetch it via mDNS TXT or /client/config.json",
-        len = token.len(),
-        prefix = token.get(..4).unwrap_or("")
-    );
+    info!("stream authentication enabled");
 
     let _mdns = if !no_mdns && cfg.transport.mdns_advertise {
         match orbiscreen_transport::mdns::Advertiser::register(
@@ -2472,7 +2468,7 @@ async fn run_secondary_display_session(
             match outcome {
                 SourceOutcome::Frame(frame) => {
                     let (width, height) = (frame.width, frame.height);
-                    if last_snapshot.map_or(true, |t| t.elapsed() >= KEEPALIVE) {
+                    if last_snapshot.is_none_or(|t| t.elapsed() >= KEEPALIVE) {
                         keepalive_frame = Some((width, height, frame.data.to_vec()));
                         last_snapshot = Some(std::time::Instant::now());
                     }
@@ -2929,7 +2925,7 @@ async fn run_start(
                 SourceOutcome::Frame(frame) => {
                     let _ = fc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let (width, height) = (frame.width, frame.height);
-                    if last_snapshot.map_or(true, |t| t.elapsed() >= KEEPALIVE) {
+                    if last_snapshot.is_none_or(|t| t.elapsed() >= KEEPALIVE) {
                         keepalive_frame = Some((width, height, Arc::from(&frame.data[..])));
                         last_snapshot = Some(std::time::Instant::now());
                     }
@@ -3193,8 +3189,7 @@ async fn run_start(
         )
         .await;
     });
-    info!("stream access token active ({len} chars, prefix={prefix}); clients fetch it via mDNS TXT or /client/config.json",
-        len = token.len(), prefix = token.get(..4).unwrap_or(""));
+    info!("stream authentication enabled");
 
     let _mdns = if !no_mdns && cfg.transport.mdns_advertise {
         match orbiscreen_transport::mdns::Advertiser::register(

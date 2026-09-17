@@ -103,11 +103,6 @@ class StreamStats(
         }
     }
 
-    /**
-     * HTTP/MPEG-TS has no host send timestamp. Compare the frame PTS
-     * to wall time from the first presented sample so delay/age still
-     * populate on USB (where [currentLiveOffset] is TIME_UNSET).
-     */
     fun notePresentedPts(presentationTimeUs: Long, nowMs: Long = System.currentTimeMillis()) {
         if (livePtsOriginUs == Long.MIN_VALUE || presentationTimeUs + 1_000_000L < livePtsOriginUs) {
             livePtsOriginUs = presentationTimeUs
@@ -244,5 +239,6 @@ class StreamStats(
         }
 
         fun formatMs(ms: Int?): String = if (ms == null) "—" else "${ms} ms"
+        fun formatMs(ms: Int?): String = if (ms == null) "-" else "${ms} ms"
     }
 }

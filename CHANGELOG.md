@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+## [v0.30.0] - 2026-09-17
+
+Full-project audit, security fixes, bug fixes, and dead-code/comment cleanup.
+
+### 🔒 Security
+- **Token bootstrap restricted (S1)**: `GET /client/config.json` now serves the live shared token only to loopback peers (USB AOA bridge, adb reverse) or requests already presenting a valid credential; remote LAN peers receive `401 authentication required` instead of the token. Added regression tests covering loopback, remote-unauthenticated, and credential paths.
+- **mDNS token broadcast removed (S1)**: the service TXT record no longer publishes the shared token; no client consumed it (Android `DiscoveryService` resolves host/port only).
+- **Token fragments removed from logs (S2)**: auth-failure logs no longer include supplied/expected token prefixes; daemon startup logs no longer print token prefix/length; Android `HostApi` no longer logs token prefixes.
+
+### 🐛 Bug Fixes
+- **Android input ordering (B1–B3)**: `VirtualCursor` bounds now update on resize under the same lock; pending trackpad deltas flush before click snapshots; delivery serialized through a single bounded ordered channel with motion-only coalescing — release events are never dropped. 10 new input regression tests (65 unit tests green).
+- **Android input ordering (B1-B3)**: `VirtualCursor` bounds now update on resize under the same lock; pending trackpad deltas flush before click snapshots; delivery serialized through a single bounded ordered channel with motion-only coalescing, release events are never dropped. 10 new input regression tests (65 unit tests green).
+- **Wrong-tablet input fallback (B4)**: `DisplayCommand::Input` no longer falls back to an arbitrary active/first session; input requires an unambiguous session match (fail closed with multi-session).
+- **Resize no longer displayless on failure (B5)**: display session resize opens the replacement before closing the old output, preserves viewer/attach counters, and initializes the idle deadline; rollback on open failure. Regression tests added.
+- **Host pointer semantics (B3-host)**: mouse buttons 6–8 map to distinct `BTN_SIDE/BTN_EXTRA/...` codes instead of falling through to `BTN_LEFT` (regression test); `release_tools` now releases all mouse buttons and keycodes plus the tablet on disconnect (no stuck keys/buttons); resize recreates the touchscreen/tablet uinput devices with fresh ABS axis ranges instead of only updating stored dimensions.
+- **Host pointer semantics (B3-host)**: mouse buttons 6-8 map to distinct `BTN_SIDE/BTN_EXTRA/...` codes instead of falling through to `BTN_LEFT` (regression test); `release_tools` now releases all mouse buttons and keycodes plus the tablet on disconnect (no stuck keys/buttons); resize recreates the touchscreen/tablet uinput devices with fresh ABS axis ranges instead of only updating stored dimensions.
+
+### 📦 Packaging & Versions
+- **MSRV (Pkg1)**: workspace `rust-version` raised from 1.75 to 1.92, matching the locked `gstreamer 0.25.3` requirement (cargo previously refused builds on declared MSRV).
+- **PPA source build (Pkg2)**: `debian/rules` now builds from source (`cargo build --release --workspace --locked`) instead of expecting prebuilt binaries, installs only artifacts that exist, and runs the test suite; `debian/control` declares Rust/GStreamer build-deps; the PPA workflow installs the build deps and verifies a source build + tests before upload.
+- **Packaging omissions (Pkg3)**: `clients/web/annexb.js` (loaded by `index.html`) is now shipped by the PKGBUILD, Debian rules, and RPM spec; duplicate `pkgver` line removed from PKGBUILD; RPM packaging rebuilds from the current tree (no stale binaries) and the spec's GUI file list is conditional on the GUI binary being staged; verified end-to-end with a real `rpmbuild` producing a content-checked RPM.
+- **USB udev rules**: device nodes tightened from `MODE="0666"` to `MODE="0660"` with `uaccess` (console-user scoped instead of world-writable).
+
+### 🧹 Cleanup
+- Removed the stale `#[allow(dead_code)]` on `StreamQuery` (field is read); `adb.rs` verified live (`adb::supervisor` in the USB path) and kept.
+- `.gitignore` now covers local `.android/` and `scratch/` scratch state.
+- Stripped non-GPL comments across Rust, Kotlin, and web-client sources and unified config file headers (GPL license headers retained; vendored `mpegts.js` untouched).
+
+---
+
 ## [v0.29.1] - 2026-09-17
 
 Fix dual screen USB AOA accessory routing, guard Android input pipeline against unauthenticated 401 request storms, restore fluid desktop mouse cursor motion in KWin, and ensure seamless session reconnection across physical USB hiccups.
@@ -708,6 +739,8 @@ Eliminate USB AOA buffer bloat and rubberbanding latency spikes on Android devic
 - **Android ExoPlayer Rubberbanding & Stutter Resolution (`PlayerHolder.kt`, `UsbAccessoryManager.kt`)**:
   - Locked `LiveConfiguration` min and max playback speeds to `1.0f`, completely eliminating the 0.95x–1.08x playback speed oscillation (rubberbanding) when dragging desktop windows.
   - Reconfigured `DefaultLoadControl` buffer durations to `(100, 1000, 32, 64)`, eliminating artificial TCP zero-window read pauses every 2–3 frames.
+  - Locked `LiveConfiguration` min and max playback speeds to `1.0f`, completely eliminating the 0.95x-1.08x playback speed oscillation (rubberbanding) when dragging desktop windows.
+  - Reconfigured `DefaultLoadControl` buffer durations to `(100, 1000, 32, 64)`, eliminating artificial TCP zero-window read pauses every 2-3 frames.
   - Overrode `shouldDropOutputBuffer` (threshold -30 ms) and `shouldDropBuffersToKeyframe` (threshold -100 ms) in `LowLatencyVideoRenderer` to immediately snap back to live edge upon any delay spike.
   - Enabled `tcpNoDelay = true` and socket buffer sizing on accepted local proxy sockets in `UsbAccessoryManager`, removed redundant per-packet `flush()` calls, and capped `accBuf` expansion to 512 KB.
 
@@ -799,6 +832,7 @@ Measure UDP PMTU without truncated ACKs or fragment stalls, expand Android recei
   - Reassemble access units in linear time, enlarge socket buffers, and hold P-frames after a lost fragment until the next IDR so a dropped UDP packet cannot leave the decoder permanently garbled.
   - Per-client DPLPMTUD: host probes upward from a safe baseline (1200) with padded UDP datagrams; the Android client ACKs the received size. Video fragments follow the confirmed datagram. Probe and video datagrams set `IP_PMTUDISC_PROBE`. Acks that do not match the in-flight probe id are ignored after the search completes. `ORBISCREEN_UDP_MAX_DATAGRAM` caps the search; `ORBISCREEN_UDP_DROP_ABOVE` pretends larger packets were lost (test hook). `ORBISCREEN_UDP_LOSS_PCT` randomly drops outgoing datagrams (test hook).
   - UDP hello waits out the handshake window so a PMTU probe arriving before Hello-Ack does not abort the session. A host-liveness watchdog ends the UDP session if no packet arrives. The UDP surface letterboxes to the same content rect as touch mapping. The stream menu shows send-to-assemble delay as `delay Nms` (2–4 ms on a 2560×1600 VA-API Wi-Fi path; HTTP ExoPlayer still targets a 24 ms live offset).
+  - UDP hello waits out the handshake window so a PMTU probe arriving before Hello-Ack does not abort the session. A host-liveness watchdog ends the UDP session if no packet arrives. The UDP surface letterboxes to the same content rect as touch mapping. The stream menu shows send-to-assemble delay as `delay Nms` (2-4 ms on a 2560×1600 VA-API Wi-Fi path; HTTP ExoPlayer still targets a 24 ms live offset).
 
 ### 🖥 Virtual Display
 - **KWin Virtual Output & Direct Touch (`orbiscreen-daemon`, `orbiscreen-capture`, `orbiscreen-input`)**:
@@ -954,6 +988,7 @@ Shrink HTTP MPEG-TS transport queues, backpressure on full queue, reduce Android
   - Per-client muxer keeps four sink buffers and a 16-slot HTTP queue instead of 512 / 1024 queued chunks.
   - HTTP send no longer drops MPEG-TS packets on a full queue (which desynced the decoder). The muxer backpressures instead; a stalled `appsrc` push resyncs on the next keyframe.
   - Android ExoPlayer live offset cut to 24 ms (8–48 ms) with 32–64 ms load control, `FEATURE_LowLatency` decoder preference, and MediaCodec low-latency flags.
+  - Android ExoPlayer live offset cut to 24 ms (8-48 ms) with 32-64 ms load control, `FEATURE_LowLatency` decoder preference, and MediaCodec low-latency flags.
   - Android player sets foreground mode to prevent playback throttling.
   - Web `mpegts.js` live sync target cut to 30 ms with a tighter latency chase.
 
@@ -1065,6 +1100,7 @@ Eliminate USB and streaming latency by redesigning the pipeline with single-buff
   - Added a 3-attempt retry loop with exponential backoff and fallback to `USBDEVFS_CLAIMINTERFACE`, ensuring smooth accessory handover across daemon restarts.
 - **ExoPlayer Ultra-Low Latency Buffer Tuning (`PlayerHolder.kt`)**:
   - Reconfigured `DefaultLoadControl` on the Android client: reduced minimum and maximum buffer duration from 80ms–250ms down to 15ms–45ms (`bufferForPlaybackMs = 10`, `bufferForPlaybackAfterRebufferMs = 15`).
+  - Reconfigured `DefaultLoadControl` on the Android client: reduced minimum and maximum buffer duration from 80ms-250ms down to 15ms-45ms (`bufferForPlaybackMs = 10`, `bufferForPlaybackAfterRebufferMs = 15`).
   - Tuned `MediaItem.LiveConfiguration` target live offset down to 15ms (min 10ms, max 35ms), eliminating playback buffer accumulation and providing instant mouse cursor and screen reaction.
 - **Graceful USB Detach & App Lifecycle (`MainActivity.kt` & `OrbiNav.kt`)**:
   - Overrode `finish()` in `MainActivity` to prevent the Android system from force-terminating the activity when the USB accessory is detached (`ACTION_USB_ACCESSORY_DETACHED`).

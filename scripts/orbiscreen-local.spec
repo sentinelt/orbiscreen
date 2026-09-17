@@ -55,7 +55,7 @@ install -m 0644 %{_projectroot}/data/orbiscreen.desktop %{buildroot}/usr/share/a
 install -m 0644 %{_projectroot}/data/99-orbiscreen-usb.rules %{buildroot}/usr/lib/udev/rules.d/99-orbiscreen-usb.rules
 install -m 0755 %{_projectroot}/scripts/install-evdi-module.sh %{buildroot}/usr/share/orbiscreen/install-evdi-module.sh
 
-for f in index.html style.css app.js favicon.svg favicon.png apple-touch-icon.png; do
+for f in index.html style.css app.js annexb.js favicon.svg favicon.png apple-touch-icon.png; do
     install -m 0644 "%{_projectroot}/clients/web/$f" "%{buildroot}/usr/share/orbiscreen/client/$f"
 done
 mkdir -p %{buildroot}/usr/share/orbiscreen/client/vendor
@@ -113,7 +113,9 @@ fi
 # ── Packaged Files ──
 %files
 /usr/bin/orbiscreen
+%if 0%{?_orbiscreen_gui:1}
 /usr/bin/orbiscreen-gui
+%endif
 /usr/share/icons/hicolor/*/apps/orbiscreen*.*
 /usr/share/applications/orbiscreen.desktop
 /usr/lib/udev/rules.d/99-orbiscreen-usb.rules
@@ -121,6 +123,7 @@ fi
 /usr/share/orbiscreen/client/index.html
 /usr/share/orbiscreen/client/style.css
 /usr/share/orbiscreen/client/app.js
+/usr/share/orbiscreen/client/annexb.js
 /usr/share/orbiscreen/client/favicon.svg
 /usr/share/orbiscreen/client/favicon.png
 /usr/share/orbiscreen/client/apple-touch-icon.png

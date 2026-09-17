@@ -59,7 +59,7 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
 
     var lastAutoConnectedPort by remember { mutableStateOf<Int?>(null) }
 
-    // STREAM may be the start destination; a bare popBackStack() then does nothing.
+    
     val leaveStream: () -> Unit = {
         activity?.intent?.removeExtra("host")
         if (!nav.popBackStack(Routes.DISCOVERY, inclusive = false)) {
@@ -101,7 +101,6 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
             }
         }
     }
-
 
     NavHost(
         navController = nav,

@@ -453,8 +453,8 @@ class PlayerHolder(
         val wasBackgrounded = isBackgrounded
         isBackgrounded = false
         if (!wasBackgrounded) return
-        // UDP stays on its own socket; tearing it down here is what a USB
-        // permission dialog (or any other overlay Activity) used to do.
+        
+        
         if (_udp.value != null) return
         val p = _player.value
         if (p != null && p.playbackState != Player.STATE_IDLE && p.playerError == null) {
@@ -536,9 +536,10 @@ private class LowLatencyVideoRenderer(
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        // Never drop a single late P-frame. Infinite GOP has no intra-refresh
-        // on vah264enc; a hole stays as block artifacts until the next IDR.
-        // Deep lag still snaps to a keyframe via shouldDropBuffersToKeyframe.
-        return false
+        
+        
+        
+        
+        return super.shouldDropOutputBuffer(earlyUs, elapsedRealtimeUs, isLastBuffer)
     }
 }

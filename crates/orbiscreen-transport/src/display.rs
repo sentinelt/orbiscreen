@@ -28,6 +28,8 @@ pub enum DisplayCommand {
         key: Option<String>,
         width: u32,
         height: u32,
+
+        bitrate_kbps: Option<u32>,
         reply: oneshot::Sender<Result<DisplayInfo, String>>,
     },
     Release {
@@ -81,6 +83,18 @@ impl DisplayCtl {
         width: u32,
         height: u32,
     ) -> Result<DisplayInfo, String> {
+        self.acquire_with_bitrate(name, key, width, height, None)
+            .await
+    }
+
+    pub async fn acquire_with_bitrate(
+        &self,
+        name: String,
+        key: Option<String>,
+        width: u32,
+        height: u32,
+        bitrate_kbps: Option<u32>,
+    ) -> Result<DisplayInfo, String> {
         let (reply, rx) = oneshot::channel();
         self.tx
             .send(DisplayCommand::Acquire {
@@ -88,6 +102,7 @@ impl DisplayCtl {
                 key,
                 width,
                 height,
+                bitrate_kbps,
                 reply,
             })
             .await

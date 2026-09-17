@@ -7,6 +7,7 @@ pub mod aoa;
 pub mod display;
 pub mod fec;
 pub mod mdns;
+pub mod pairing;
 pub mod udp_stream;
 pub mod wt_protocol;
 pub mod wt_stream;
@@ -19,7 +20,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use axum::extract::State;
+use axum::extract::{ConnectInfo, FromRequest, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Json};
 use axum::routing::{get, post};
@@ -270,6 +271,10 @@ impl Transport {
             video_tx: video_tx.clone(),
             stats,
             token: self.token.clone(),
+            pairing: Arc::new(
+                pairing::PairingRegistry::load()
+                    .map_err(|e| TransportError::Http(format!("pairing registry: {e}")))?,
+            ),
             display_width,
             display_height,
             refresh_hz,
@@ -319,6 +324,7 @@ impl Transport {
         let udp_token = state.token.clone();
         let udp_shutdown = shutdown_rx.clone();
         let udp_displays = displays.clone();
+        let udp_registry = Arc::clone(&state.pairing);
         tokio::spawn(async move {
             udp_stream::run_udp_hub(
                 udp_port,
@@ -329,6 +335,7 @@ impl Transport {
                 udp_shutdown,
                 udp_stream::UdpLimits::from_env(),
                 udp_displays,
+                Some(udp_registry),
             )
             .await;
         });
@@ -342,6 +349,7 @@ impl Transport {
             let wt_displays = displays.clone();
             let wt_w = display_width;
             let wt_h = display_height;
+            let wt_registry = Arc::clone(&state.pairing);
             tokio::spawn(async move {
                 wt_stream::run_wt_hub(
                     hub,
@@ -353,6 +361,7 @@ impl Transport {
                     wt_displays,
                     wt_w,
                     wt_h,
+                    Some(wt_registry),
                 )
                 .await;
             });
@@ -439,6 +448,7 @@ struct AppState {
     video_tx: tokio::sync::broadcast::Sender<H264Packet>,
     stats: Arc<Stats>,
     token: String,
+    pairing: Arc<pairing::PairingRegistry>,
     display_width: u32,
     display_height: u32,
     refresh_hz: u32,
@@ -485,6 +495,10 @@ fn build_router(state: AppState) -> Router {
             post(api_session_open).delete(api_session_close),
         )
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_check))
+        .route("/api/pair/request", post(api_pair_request))
+        .route("/api/pair/request", post(api_pair_request))
+        .route("/api/pair/status", get(api_pair_status))
+        .route("/api/pair", get(api_pair_list).post(api_pair_manage))
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
         .route("/api/info", get(api_info))
@@ -599,67 +613,68 @@ fn query_token(uri_query: Option<&str>) -> Option<&str> {
         .filter(|t| !t.is_empty())
 }
 
+fn request_credential(request: &axum::extract::Request) -> Option<String> {
+    let header = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| {
+            if v.get(..7)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("bearer "))
+            {
+                Some(v[7..].to_string())
+            } else {
+                None
+            }
+        });
+    header.or_else(|| {
+        query_token(request.uri().query())
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn request_has_token(request: &axum::extract::Request, token: &str) -> bool {
+    request_credential(request).is_some_and(|t| token_eq(&t, token))
+}
+
 async fn auth_check(
     State(state): State<AppState>,
     headers: HeaderMap,
     request: axum::extract::Request,
     next: middleware::Next,
 ) -> axum::response::Response {
-    let header_ok = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| {
-            if v.len() > 7 && v[..7].eq_ignore_ascii_case("bearer ") {
-                Some(&v[7..])
-            } else {
-                None
-            }
-        })
-        .is_some_and(|t| token_eq(t, &state.token));
-    let query_ok = query_token(request.uri().query()).is_some_and(|t| token_eq(t, &state.token));
-    if header_ok || query_ok {
-        next.run(request).await
-    } else {
-        state.stats.note_auth_failure();
-        let peer = request
-            .extensions()
-            .get::<axum::extract::ConnectInfo<SocketAddr>>()
-            .map(|c| c.0.to_string())
-            .unwrap_or_else(|| "?".into());
-        let auth_desc = match headers.get(axum::http::header::AUTHORIZATION) {
-            None => "missing".to_string(),
-            Some(v) => match v.to_str() {
-                Err(_) => "non-utf8".to_string(),
-                Ok(s) if s.len() > 7 && s[..7].eq_ignore_ascii_case("bearer ") => {
-                    let t = &s[7..];
-                    format!("bearer(len={} prefix={})", t.len(), t.get(..4).unwrap_or(t))
-                }
-                Ok(s) => format!(
-                    "unexpected(scheme={})",
-                    s.split_whitespace().next().unwrap_or("?")
-                ),
-            },
-        };
-        warn!(
-            "unauthorized request rejected (peer={}, {} {}, auth={}, query_token={}, expected prefix={} len={})",
-            peer,
-            request.method(),
-            request.uri().path(),
-            auth_desc,
-            query_token(request.uri().query()).is_some(),
-            state.token.get(..4).unwrap_or(&state.token),
-            state.token.len()
-        );
-        (
-            StatusCode::UNAUTHORIZED,
-            [(
-                axum::http::header::WWW_AUTHENTICATE,
-                HeaderValue::from_static("Bearer"),
-            )],
-            "unauthorized",
-        )
-            .into_response()
+    if request_has_token(&request, &state.token) {
+        return next.run(request).await;
     }
+    if let Some(credential) = request_credential(&request) {
+        if state.pairing.verify(&credential).is_some() {
+            return next.run(request).await;
+        }
+    }
+    state.stats.note_auth_failure();
+    let peer = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|c| c.0.to_string())
+        .unwrap_or_else(|| "?".into());
+    warn!(
+        "unauthorized request rejected (peer={}, {} {}, authorization_present={}, query_token_present={})",
+        peer,
+        request.method(),
+        request.uri().path(),
+        headers.contains_key(axum::http::header::AUTHORIZATION),
+        query_token(request.uri().query()).is_some()
+    );
+    (
+        StatusCode::UNAUTHORIZED,
+        [(
+            axum::http::header::WWW_AUTHENTICATE,
+            HeaderValue::from_static("Bearer"),
+        )],
+        "unauthorized",
+    )
+        .into_response()
 }
 
 async fn api_info(State(state): State<AppState>) -> impl IntoResponse {
@@ -700,8 +715,23 @@ fn query_value<'a>(uri_query: Option<&'a str>, key: &str) -> Option<&'a str> {
 
 async fn api_session_open(
     State(state): State<AppState>,
-    Json(payload): Json<serde_json::Value>,
+    request: axum::extract::Request,
 ) -> impl IntoResponse {
+    let _peer_ip = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|c| c.0.ip().to_string());
+    let supplied_credential = request_credential(&request);
+    let payload: serde_json::Value = match axum::Json::from_request(request, &()).await {
+        Ok(axum::Json(value)) => value,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"ok": false, "error": "invalid json"})),
+            )
+                .into_response()
+        }
+    };
     let Some(ctl) = &state.displays else {
         return (
             StatusCode::NOT_IMPLEMENTED,
@@ -732,22 +762,47 @@ async fn api_session_open(
         .and_then(|v| v.as_u64())
         .unwrap_or(u64::from(state.display_height))
         .clamp(240, 4320) as u32;
-    match ctl.acquire(name, key, width, height).await {
-        Ok(info) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "ok": true,
-                "id": info.id,
-                "name": info.name,
-                "connector": info.connector,
-                "width": info.width,
-                "height": info.height,
-                "encoder": info.encoder,
-                "udp_port": udp_stream::default_udp_port(state.config.signaling_port),
-                "refresh_hz": state.refresh_hz,
-            })),
-        )
-            .into_response(),
+
+    let bitrate_kbps = payload
+        .get("bitrate_kbps")
+        .and_then(|v| v.as_u64())
+        .map(|v| v.clamp(1_000, 120_000) as u32);
+    let owner_id = supplied_credential
+        .as_deref()
+        .and_then(|c| state.pairing.verify(c))
+        .map(|client| client.client_id);
+    match ctl
+        .acquire_with_bitrate(name, key, width, height, bitrate_kbps)
+        .await
+    {
+        Ok(info) => {
+            if let Some(owner_id) = &owner_id {
+                if !state.pairing.bind_session(owner_id, &info.id) {
+                    let _ = ctl.release(&info.id).await;
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(serde_json::json!({"ok": false, "error": "session bind failed"})),
+                    )
+                        .into_response();
+                }
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "ok": true,
+                    "id": info.id,
+                    "name": info.name,
+                    "connector": info.connector,
+                    "width": info.width,
+                    "height": info.height,
+                    "encoder": info.encoder,
+                    "udp_port": udp_stream::default_udp_port(state.config.signaling_port),
+                    "refresh_hz": state.refresh_hz,
+                    "bitrate_kbps": bitrate_kbps,
+                })),
+            )
+                .into_response()
+        }
         Err(e) => (
             StatusCode::BAD_GATEWAY,
             Json(serde_json::json!({"ok": false, "error": e})),
@@ -770,6 +825,15 @@ async fn api_session_close(
     if id.is_empty() {
         return StatusCode::BAD_REQUEST;
     }
+    if let Some(credential) = request_credential(&request) {
+        if let Some(client) = state.pairing.verify(&credential) {
+            if !state.pairing.owns_session(&client.client_id, &id) {
+                state.stats.note_auth_failure();
+                return StatusCode::FORBIDDEN;
+            }
+            state.pairing.forget_session(&id);
+        }
+    }
     ctl.release(&id).await;
     StatusCode::OK
 }
@@ -778,19 +842,31 @@ async fn client_config(
     State(state): State<AppState>,
     request: axum::extract::Request,
 ) -> impl IntoResponse {
-    let peer = request
+    let local = request
         .extensions()
         .get::<axum::extract::ConnectInfo<SocketAddr>>()
-        .map(|c| c.0.to_string())
-        .unwrap_or_else(|| "?".into());
-    debug!("client config served with live token (peer={peer})");
+        .is_some_and(|peer| peer.0.ip().is_loopback());
+    let supplied = request_credential(&request);
+    let paired = supplied
+        .as_deref()
+        .is_some_and(|c| state.pairing.verify(c).is_some());
+    let authenticated = request_has_token(&request, &state.token) || paired;
+    if !local && !authenticated {
+        state.stats.note_auth_failure();
+        return (
+            StatusCode::UNAUTHORIZED,
+            [("cache-control", "no-store")],
+            "authentication required",
+        )
+            .into_response();
+    }
     (
         [
             ("content-type", "application/json"),
             ("cache-control", "no-cache, no-store, must-revalidate"),
         ],
         Json(serde_json::json!({
-            "token": state.token,
+            "token": if paired { supplied.as_deref() } else { Some(state.token.as_str()) },
             "display_width": state.display_width,
             "display_height": state.display_height,
             "wt_port": state.wt_offer.as_ref().map(|o| o.port),
@@ -799,6 +875,173 @@ async fn client_config(
             "wt_hosts": state.wt_offer.as_ref().map(|o| o.hosts.clone()),
         })),
     )
+        .into_response()
+}
+
+async fn api_pair_request(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let label = payload
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("device");
+    match state.pairing.request_pairing(label, &peer.ip().to_string()) {
+        Some(request) => {
+            info!(peer = %peer, "pairing request submitted; awaiting host approval");
+            (
+                StatusCode::OK,
+                [("cache-control", "no-store")],
+                Json(serde_json::json!({
+                    "request_id": request.request_id,
+                    "status": "pending",
+                })),
+            )
+                .into_response()
+        }
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "pairing unavailable"})),
+        )
+            .into_response(),
+    }
+}
+
+async fn api_pair_status(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: axum::extract::Request,
+) -> impl IntoResponse {
+    let Some(request_id) = query_value(request.uri().query(), "id").map(str::to_string) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            [("cache-control", "no-store")],
+            "missing request id",
+        )
+            .into_response();
+    };
+    let peer_str = peer.ip().to_string();
+    let Some(request) = state
+        .pairing
+        .pending_requests()
+        .into_iter()
+        .find(|r| r.request_id == request_id)
+    else {
+        return (
+            StatusCode::OK,
+            [("cache-control", "no-store")],
+            Json(serde_json::json!({"status": "unknown"})),
+        )
+            .into_response();
+    };
+    if request.peer != peer_str {
+        state.stats.note_auth_failure();
+        return (
+            StatusCode::FORBIDDEN,
+            [("cache-control", "no-store")],
+            "request belongs to another peer",
+        )
+            .into_response();
+    }
+    let credential = state.pairing.claim(&request.request_id, &peer_str);
+    match credential {
+        Some(credential) => (
+            StatusCode::OK,
+            [("cache-control", "no-store")],
+            Json(serde_json::json!({
+                "status": "approved",
+                "credential": credential,
+            })),
+        )
+            .into_response(),
+        None => (
+            StatusCode::OK,
+            [("cache-control", "no-store")],
+            Json(serde_json::json!({"status": "pending"})),
+        )
+            .into_response(),
+    }
+}
+
+async fn api_pair_list(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+) -> impl IntoResponse {
+    if !is_host_request(&state, &request) {
+        return (StatusCode::UNAUTHORIZED, "host authorization required").into_response();
+    }
+    (
+        [("cache-control", "no-store")],
+        Json(serde_json::json!({
+            "requests": state.pairing.pending_requests(),
+            "clients": state.pairing.clients(),
+        })),
+    )
+        .into_response()
+}
+
+async fn api_pair_manage(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+) -> axum::response::Response {
+    if !is_host_request(&state, &request) {
+        return (StatusCode::UNAUTHORIZED, "host authorization required").into_response();
+    }
+    let payload: serde_json::Value = match axum::Json::from_request(request, &()).await {
+        Ok(axum::Json(value)) => value,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"ok": false, "error": "invalid json"})),
+            )
+                .into_response()
+        }
+    };
+    let action = payload.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let id = payload
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let outcome = match action {
+        "approve" => state
+            .pairing
+            .approve(&id)
+            .map(|client| {
+                client
+                    .map(|c| serde_json::json!({"ok": true, "client_id": c.client_id}))
+                    .unwrap_or_else(|| serde_json::json!({"ok": false, "error": "unknown request"}))
+            })
+            .map_err(|e| e.to_string()),
+        "deny" => state
+            .pairing
+            .deny(&id)
+            .map(|removed| serde_json::json!({"ok": removed}))
+            .map_err(|e| e.to_string()),
+        "revoke" => state
+            .pairing
+            .revoke(&id)
+            .map(|removed| serde_json::json!({"ok": removed}))
+            .map_err(|e| e.to_string()),
+        _ => Err(unavailable_pairing().to_string()),
+    };
+    match outcome {
+        Ok(json) => ([("cache-control", "no-store")], Json(json)).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"ok": false, "error": "pairing storage unavailable"})),
+        )
+            .into_response(),
+    }
+}
+
+fn unavailable_pairing() -> std::io::Error {
+    std::io::Error::other("pairing registry unavailable")
+}
+
+fn is_host_request(state: &AppState, request: &axum::extract::Request) -> bool {
+    request_has_token(request, &state.token)
 }
 
 async fn run_command(program: &str, args: &[&str]) -> bool {
@@ -1249,7 +1492,6 @@ async fn stream_head_handler() -> impl IntoResponse {
 }
 
 #[derive(serde::Deserialize, Debug, Default)]
-#[allow(dead_code)]
 struct StreamQuery {
     session: Option<String>,
 }
@@ -1324,9 +1566,6 @@ async fn stream_handler(
                     Ok(sample) => {
                         if let Some(buffer) = sample.buffer() {
                             if let Ok(map) = buffer.map_readable() {
-                                // Never drop muxed TS: a hole mid-GOP garbles the
-                                // decoder until the next IDR. Backpressure waits
-                                // for a keyframe on the H.264 side if appsrc push fails.
                                 if tx.blocking_send(map.to_vec()).is_err() {
                                     return Err(gstreamer::FlowError::Eos);
                                 }
@@ -1450,8 +1689,7 @@ async fn stream_handler(
                 let _ = tx.try_send(());
             }
         };
-        // Receiver is subscribed; ask now so the IDR is not encoded
-        // before this client can see it.
+
         request_idr();
         loop {
             if tx_alive.is_closed() {
@@ -1477,8 +1715,6 @@ async fn stream_handler(
             };
             if wait_keyframe {
                 if !pkt.is_keyframe {
-                    // Same as the UDP client: a lost IDR plus more P-frames
-                    // asks again, at most four times a second.
                     request_idr();
                     continue;
                 }
@@ -1488,9 +1724,7 @@ async fn stream_handler(
             let delta_ns = match last_pkt_pts_ns {
                 Some(last) => {
                     let diff = pkt.pts_ns.saturating_sub(last);
-                    // If the gap between packets exceeds 250ms (e.g. system suspend/resume,
-                    // GPU sleep, or extreme lag spike), do not pass the massive time jump into
-                    // mpegtsmux and downstream players. Clamp the progression to nominal frame duration.
+
                     if diff > 250_000_000 {
                         debug!(
                             diff_ms = diff / 1_000_000,
@@ -1538,6 +1772,104 @@ async fn stream_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn config_test_state() -> AppState {
+        let (input_tx, _) = mpsc::channel(1);
+        let (video_tx, _) = tokio::sync::broadcast::channel(1);
+        let (client_shutdown_tx, _) = tokio::sync::broadcast::channel(1);
+        AppState {
+            config: ServerConfig {
+                signaling_port: 8788,
+                client_web_dir: PathBuf::from("clients/web"),
+                enable_usb_supervisors: false,
+                output_connector: None,
+            },
+            input_tx,
+            video_tx,
+            stats: Arc::new(Stats::default()),
+            token: "test-credential".into(),
+            pairing: Arc::new(pairing::PairingRegistry::load_from(None).unwrap()),
+            display_width: 1920,
+            display_height: 1080,
+            refresh_hz: 60,
+            encoder_kind: "auto",
+            version: "test",
+            started: Instant::now(),
+            idr_tx: None,
+            client_shutdown_tx,
+            displays: None,
+            wt_offer: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn config_bootstrap_requires_loopback_or_authentication() {
+        for (peer, credential, expected) in [
+            (Some("127.0.0.1:1234"), None, StatusCode::OK),
+            (Some("[::1]:1234"), None, StatusCode::OK),
+            (Some("192.0.2.1:1234"), None, StatusCode::UNAUTHORIZED),
+            (None, None, StatusCode::UNAUTHORIZED),
+            (
+                Some("192.0.2.1:1234"),
+                Some("wrong"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                Some("192.0.2.1:1234"),
+                Some("test-credential"),
+                StatusCode::OK,
+            ),
+        ] {
+            let state = config_test_state();
+            let stats = state.stats.clone();
+            let mut builder = axum::http::Request::builder().uri("/client/config.json");
+            if let Some(credential) = credential {
+                builder = builder.header("authorization", format!("Bearer {credential}"));
+            }
+            let mut request = builder.body(axum::body::Body::empty()).unwrap();
+            if let Some(peer) = peer {
+                request.extensions_mut().insert(axum::extract::ConnectInfo(
+                    peer.parse::<SocketAddr>().unwrap(),
+                ));
+            }
+            let response = client_config(State(state), request).await.into_response();
+            assert_eq!(response.status(), expected);
+            assert!(response.headers()["cache-control"]
+                .to_str()
+                .unwrap()
+                .contains("no-store"));
+            let body = axum::body::to_bytes(response.into_body(), 4096)
+                .await
+                .unwrap();
+            if expected == StatusCode::OK {
+                let config: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(config["token"], "test-credential");
+            } else {
+                assert_eq!(stats.auth_failures(), 1);
+                assert!(!String::from_utf8_lossy(&body).contains("test-credential"));
+            }
+        }
+    }
+
+    #[test]
+    fn token_authentication_accepts_only_matching_credentials() {
+        for (authorization, query, accepted) in [
+            (Some("bEaReR test-credential"), "", true),
+            (Some("Bearer wrong"), "", false),
+            (Some("Basic test-credential"), "", false),
+            (Some("Bearer "), "", false),
+            (None, "?token=test-credential", true),
+            (None, "?token=wrong", false),
+            (None, "", false),
+        ] {
+            let mut builder = axum::http::Request::builder().uri(format!("/input{query}"));
+            if let Some(authorization) = authorization {
+                builder = builder.header("authorization", authorization);
+            }
+            let request = builder.body(axum::body::Body::empty()).unwrap();
+            assert_eq!(request_has_token(&request, "test-credential"), accepted);
+        }
+    }
 
     #[test]
     fn browser_paths_redirect_to_https() {

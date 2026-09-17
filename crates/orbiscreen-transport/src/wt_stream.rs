@@ -67,7 +67,6 @@ fn idr_due(last: Instant, now: Instant) -> bool {
     now.duration_since(last) >= IDR_DEBOUNCE
 }
 
-/// Regenerate before WebTransport's 14-day cap is actually hit.
 const CERT_RENEW_SLACK: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn default_identity_paths() -> (PathBuf, PathBuf) {
@@ -223,8 +222,84 @@ impl WtHub {
     }
 }
 
+enum StreamAuth {
+    Shared,
+    Paired {
+        credential: String,
+        client_id: String,
+        session_id: String,
+    },
+}
+
+impl StreamAuth {
+    fn authenticate(
+        credential: &str,
+        shared_token: &str,
+        registry: Option<&crate::pairing::PairingRegistry>,
+        session: &str,
+        has_displays: bool,
+    ) -> Option<Self> {
+        if !shared_token.is_empty() && token_eq(credential, shared_token) {
+            return Some(Self::Shared);
+        }
+        let registry = registry?;
+        let client = registry.verify(credential)?;
+        if !has_displays || session.is_empty() || !registry.owns_session(&client.client_id, session)
+        {
+            return None;
+        }
+        Some(Self::Paired {
+            credential: credential.to_string(),
+            client_id: client.client_id,
+            session_id: session.to_string(),
+        })
+    }
+
+    fn valid(&self, registry: Option<&crate::pairing::PairingRegistry>) -> bool {
+        match self {
+            Self::Shared => true,
+            Self::Paired {
+                credential,
+                client_id,
+                session_id,
+            } => registry.is_some_and(|registry| {
+                registry
+                    .verify(credential)
+                    .is_some_and(|client| client.client_id == *client_id)
+                    && registry.owns_session(client_id, session_id)
+            }),
+        }
+    }
+
+    fn accepts_attachment(&self, session: &str) -> bool {
+        match self {
+            Self::Shared => true,
+            Self::Paired { session_id, .. } => session_id == session,
+        }
+    }
+}
+
+async fn wait_for_revocation(
+    auth: &StreamAuth,
+    registry: Option<&crate::pairing::PairingRegistry>,
+) {
+    if matches!(auth, StreamAuth::Shared) {
+        std::future::pending::<()>().await;
+        return;
+    }
+    let mut tick = tokio::time::interval(Duration::from_millis(250));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tick.tick().await;
+        if !auth.valid(registry) {
+            return;
+        }
+    }
+}
+
 struct WtCtx {
     token: String,
+    registry: Option<Arc<crate::pairing::PairingRegistry>>,
     video: broadcast::Sender<H264Packet>,
     idr_tx: Option<tokio::sync::mpsc::Sender<()>>,
     stats: Arc<Stats>,
@@ -244,6 +319,7 @@ pub async fn run_wt_hub(
     displays: Option<DisplayCtl>,
     width: u32,
     height: u32,
+    registry: Option<Arc<crate::pairing::PairingRegistry>>,
 ) {
     let port = hub.offer.port;
     let config = WtServerConfig::builder()
@@ -265,6 +341,7 @@ pub async fn run_wt_hub(
     );
     let ctx = Arc::new(WtCtx {
         token,
+        registry,
         video,
         idr_tx,
         stats,
@@ -309,22 +386,39 @@ async fn handle_session(
         Some(_) => return Err("expected hello".into()),
         None => return Err("closed before hello".into()),
     };
-    if !token_eq(&hello.token, &ctx.token) {
+    let Some(auth) = StreamAuth::authenticate(
+        &hello.token,
+        &ctx.token,
+        ctx.registry.as_deref(),
+        &hello.session,
+        ctx.displays.is_some(),
+    ) else {
         ctx.stats.note_auth_failure();
-        return Err("bad token".into());
-    }
-    let ack = encode_hello_ack(
-        ctx.width.min(u32::from(u16::MAX)) as u16,
-        ctx.height.min(u32::from(u16::MAX)) as u16,
-    )
-    .map_err(|e| format!("{e:?}"))?;
-    write_all(&mut send, &ack).await?;
+        connection.close(1u32.into(), b"unauthorized");
+        return Err("unauthorized".into());
+    };
+    let result = tokio::select! {
+        biased;
+        _ = wait_for_revocation(&auth, ctx.registry.as_deref()) => Err("authorization revoked".into()),
+        result = stream_session(&connection, &mut send, &mut recv, &ctx, &auth, &hello.session) => result,
+    };
+    connection.close(0u32.into(), b"session ended");
+    result
+}
 
+async fn stream_session(
+    connection: &wtransport::Connection,
+    send: &mut SendStream,
+    recv: &mut RecvStream,
+    ctx: &WtCtx,
+    auth: &StreamAuth,
+    session: &str,
+) -> Result<(), String> {
     let attached = if let Some(ctl) = &ctx.displays {
-        let id = if hello.session.is_empty() {
+        let id = if session.is_empty() {
             None
         } else {
-            Some(hello.session.clone())
+            Some(session.to_string())
         };
         match ctl.attach(id).await {
             Ok(att) => Some(att),
@@ -354,6 +448,19 @@ async fn handle_session(
         }
     }
     let _detach = DetachGuard(ctx.displays.clone().zip(session_id.clone()));
+    if !auth.valid(ctx.registry.as_deref())
+        || session_id
+            .as_deref()
+            .is_some_and(|id| !auth.accepts_attachment(id))
+    {
+        return Err("unauthorized attachment".into());
+    }
+    let ack = encode_hello_ack(
+        ctx.width.min(u32::from(u16::MAX)) as u16,
+        ctx.height.min(u32::from(u16::MAX)) as u16,
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    write_all(send, &ack).await?;
 
     let mut last_idr = Instant::now()
         .checked_sub(IDR_DEBOUNCE)
@@ -393,14 +500,14 @@ async fn handle_session(
     let mut buf = Vec::new();
     loop {
         tokio::select! {
-            incoming = read_into(&mut recv, &mut buf) => {
+            incoming = read_into(recv, &mut buf) => {
                 incoming?;
                 while let Some(msg) = pop_message(&mut buf)? {
                     match msg {
                         Message::Idr => request_idr(),
                         Message::Ping(t0) => {
                             let pong = encode_pong(t0, host_now_ns()).map_err(|e| format!("{e:?}"))?;
-                            write_all(&mut send, &pong).await?;
+                            write_all(send, &pong).await?;
                         }
                         Message::Bye => return Ok(()),
                         Message::Hello(_) | Message::HelloAck(_) | Message::Video(_) | Message::Pong { .. } => {}
@@ -446,7 +553,7 @@ async fn handle_session(
                             }
                             Err(e) => return Err(format!("{e:?}")),
                         };
-                        if write_all(&mut send, &frame).await.is_err() {
+                        if write_all(send, &frame).await.is_err() {
                             return Ok(());
                         }
                     }
@@ -486,7 +593,7 @@ async fn handle_session(
                         if !use_datagrams {
                             let frame = super::wt_protocol::encode_video(&pkt, host_now_ns())
                                 .map_err(|e| format!("{e:?}"))?;
-                            if write_all(&mut send, &frame).await.is_err() {
+                            if write_all(send, &frame).await.is_err() {
                                 return Ok(());
                             }
                         }
@@ -541,6 +648,199 @@ fn pop_message(buf: &mut Vec<u8>) -> Result<Option<Message>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn paired_registry() -> (Arc<crate::pairing::PairingRegistry>, String, String) {
+        let registry = Arc::new(crate::pairing::PairingRegistry::load_from(None).unwrap());
+        let request = registry.request_pairing("tablet", "192.0.2.1").unwrap();
+        let client = registry.approve(&request.request_id).unwrap().unwrap();
+        let credential = registry.claim(&request.request_id, "192.0.2.1").unwrap();
+        assert!(registry.bind_session(&client.client_id, "owned-session"));
+        (registry, credential, client.client_id)
+    }
+
+    #[test]
+    fn paired_auth_requires_explicit_owned_display_session() {
+        let (registry, credential, _) = paired_registry();
+        for (session, displays) in [
+            ("", true),
+            ("other-session", true),
+            ("owned-session", false),
+        ] {
+            assert!(StreamAuth::authenticate(
+                &credential,
+                "shared",
+                Some(&registry),
+                session,
+                displays,
+            )
+            .is_none());
+        }
+        assert!(
+            StreamAuth::authenticate(&credential, "shared", None, "owned-session", true).is_none()
+        );
+        assert!(StreamAuth::authenticate(
+            "invalid",
+            "shared",
+            Some(&registry),
+            "owned-session",
+            true
+        )
+        .is_none());
+        let auth = StreamAuth::authenticate(
+            &credential,
+            "shared",
+            Some(&registry),
+            "owned-session",
+            true,
+        )
+        .unwrap();
+        assert!(auth.valid(Some(&registry)));
+        assert!(auth.accepts_attachment("owned-session"));
+        assert!(!auth.accepts_attachment("other-session"));
+        assert!(!auth.valid(None));
+        registry.forget_session("owned-session");
+        assert!(!auth.valid(Some(&registry)));
+    }
+
+    #[test]
+    fn paired_auth_does_not_accept_another_clients_session() {
+        let (registry, _, _) = paired_registry();
+        let request = registry.request_pairing("other", "192.0.2.2").unwrap();
+        registry.approve(&request.request_id).unwrap().unwrap();
+        let credential = registry.claim(&request.request_id, "192.0.2.2").unwrap();
+        assert!(StreamAuth::authenticate(
+            &credential,
+            "shared",
+            Some(&registry),
+            "owned-session",
+            true,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn shared_auth_preserves_legacy_default_stream() {
+        let auth = StreamAuth::authenticate("shared", "shared", None, "", false).unwrap();
+        assert!(matches!(auth, StreamAuth::Shared));
+        assert!(auth.valid(None));
+        assert!(auth.accepts_attachment("legacy"));
+        assert!(StreamAuth::authenticate("", "", None, "", false).is_none());
+    }
+
+    #[tokio::test]
+    async fn paired_revocation_interrupts_idle_stream() {
+        let (registry, credential, client_id) = paired_registry();
+        let identity = Identity::self_signed(["localhost", "127.0.0.1"]).unwrap();
+        let digest = identity.certificate_chain().as_slice()[0].hash();
+        let server = Endpoint::server(
+            WtServerConfig::builder()
+                .with_bind_address("127.0.0.1:0".parse().unwrap())
+                .with_identity(identity)
+                .build(),
+        )
+        .unwrap();
+        let port = server.local_addr().unwrap().port();
+        let (video, _) = broadcast::channel(8);
+        let (commands, mut commands_rx) = tokio::sync::mpsc::channel(8);
+        let stats = Arc::new(Stats::default());
+        let ctx = Arc::new(WtCtx {
+            token: "shared".into(),
+            registry: Some(registry.clone()),
+            video: video.clone(),
+            idr_tx: None,
+            stats,
+            displays: Some(DisplayCtl::new(commands)),
+            width: 640,
+            height: 480,
+        });
+        let accept = tokio::spawn(async move {
+            let incoming = server.accept().await;
+            let result = accept_session(incoming, ctx).await;
+            server.wait_idle().await;
+            result
+        });
+        let client = Endpoint::client(
+            wtransport::ClientConfig::builder()
+                .with_bind_default()
+                .with_server_certificate_hashes([digest])
+                .build(),
+        )
+        .unwrap();
+        let connection = client
+            .connect(format!("https://127.0.0.1:{port}/orbiscreen"))
+            .await
+            .unwrap();
+        let (mut send, mut recv) = connection.open_bi().await.unwrap().await.unwrap();
+        send.write_all(
+            &super::super::wt_protocol::encode_hello(&credential, "owned-session").unwrap(),
+        )
+        .await
+        .unwrap();
+        let command = tokio::time::timeout(Duration::from_secs(2), commands_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        match command {
+            crate::DisplayCommand::Attach { id, reply } => {
+                assert_eq!(id.as_deref(), Some("owned-session"));
+                assert!(reply
+                    .send(Ok(crate::AttachedDisplay {
+                        info: crate::DisplayInfo {
+                            id: "owned-session".into(),
+                            name: "tablet".into(),
+                            connector: "test".into(),
+                            width: 640,
+                            height: 480,
+                            encoder: "test".into(),
+                        },
+                        video: video.subscribe(),
+                    }))
+                    .is_ok());
+            }
+            _ => panic!("expected attach"),
+        }
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), read_message(&mut recv))
+                .await
+                .unwrap()
+                .unwrap(),
+            Some(Message::HelloAck(_))
+        ));
+        video
+            .send(H264Packet {
+                bytes: vec![0, 0, 0, 1, 0x65, 9],
+                is_keyframe: true,
+                pts_ns: 1,
+            })
+            .unwrap();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), read_message(&mut recv))
+                .await
+                .unwrap()
+                .unwrap(),
+            Some(Message::Video(_))
+        ));
+        assert!(registry.revoke(&client_id).unwrap());
+        tokio::time::timeout(Duration::from_secs(2), connection.closed())
+            .await
+            .unwrap();
+        let detached = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(command) = commands_rx.recv().await {
+                if let crate::DisplayCommand::Detach { id } = command {
+                    return id;
+                }
+            }
+            panic!("missing detach")
+        })
+        .await
+        .unwrap();
+        assert_eq!(detached, "owned-session");
+        assert!(tokio::time::timeout(Duration::from_secs(3), accept)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+    }
 
     #[test]
     fn default_port_is_signaling_plus_two() {
@@ -657,6 +957,7 @@ mod tests {
             None,
             640,
             480,
+            None,
         ));
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 

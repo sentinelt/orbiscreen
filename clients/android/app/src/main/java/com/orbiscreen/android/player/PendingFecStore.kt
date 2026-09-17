@@ -3,14 +3,6 @@
 
 package com.orbiscreen.android.player
 
-/**
- * Assembles one seq of FEC-protected datagrams.
- *
- * Data fragments open (or fill) a pending AU. Parity only attaches to an
- * existing one — a late parity after emit, or a parity-first packet, must
- * not create a new pending AU. All data present is enough to emit; parity
- * is only used to recover missing data shards.
- */
 class PendingFecStore {
     data class Complete(
         val seq: Int,

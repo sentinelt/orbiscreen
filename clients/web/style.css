@@ -619,6 +619,97 @@ html, body {
     display: none;
 }
 
+.pairingPanel,
+.pairingList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.pairingPanel,
+.pairingAdminCard {
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.pairingPanel input,
+.pairingAdminCard input {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface-variant);
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.pairingActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pairingActions button,
+#btnHostApprovals,
+#btnCloseApprovals {
+    min-height: 44px;
+    flex: 0 1 auto;
+}
+
+.pairingPanel button:disabled,
+.pairingAdminCard button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pairingPanel :focus-visible,
+.pairingAdminCard :focus-visible,
+#btnHostApprovals:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+}
+
+.pairingIdentity {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    user-select: text;
+    -webkit-user-select: text;
+    unicode-bidi: plaintext;
+}
+
+.pairingAdminCard {
+    max-width: 600px;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.pairingDevice {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--surface-variant);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+}
+
+.overlay {
+    overflow-y: auto;
+    touch-action: pan-y;
+    align-items: safe center;
+}
+
+.loadingContainer {
+    width: 100%;
+    max-width: 440px;
+    flex-shrink: 0;
+    margin-block: auto;
+}
+
 .hidden {
     display: none !important;
 }

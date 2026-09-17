@@ -7,10 +7,8 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -21,6 +19,80 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 private const val TAG = "Orbi.Input"
+
+internal class VirtualCursor(initialWidth: Int, initialHeight: Int) {
+    private var maxX = (initialWidth - 1).coerceAtLeast(0).toFloat()
+    private var maxY = (initialHeight - 1).coerceAtLeast(0).toFloat()
+
+    var x: Float = (initialWidth / 2).toFloat().coerceIn(0f, maxX)
+        private set
+    var y: Float = (initialHeight / 2).toFloat().coerceIn(0f, maxY)
+        private set
+
+    fun applyDelta(dx: Float, dy: Float) {
+        
+        
+        
+        x = (x + dx).coerceIn(0f, maxX)
+        y = (y + dy).coerceIn(0f, maxY)
+    }
+
+    fun place(px: Float, py: Float) {
+        x = px.coerceIn(0f, maxX)
+        y = py.coerceIn(0f, maxY)
+    }
+
+    fun resize(width: Int, height: Int) {
+        maxX = (width - 1).coerceAtLeast(0).toFloat()
+        maxY = (height - 1).coerceAtLeast(0).toFloat()
+        x = x.coerceIn(0f, maxX)
+        y = y.coerceIn(0f, maxY)
+    }
+}
+
+internal class OrderedInputQueue<T>(capacity: Int = 64) {
+    private class Entry<T>(var values: List<T>, val motionKey: String?) {
+        var consumed = false
+    }
+
+    private val channel = Channel<Entry<T>>(capacity)
+    private val producerLock = Any()
+    private var tail: Entry<T>? = null
+    @Volatile
+    private var closed = false
+
+    fun submit(values: List<T>, motionKey: String? = null): Boolean = synchronized(producerLock) {
+        if (closed) return false
+        val previous = tail
+        if (motionKey != null && previous?.motionKey == motionKey) {
+            synchronized(previous) {
+                if (!previous.consumed) {
+                    previous.values = values
+                    return true
+                }
+            }
+        }
+        val entry = Entry(values, motionKey)
+        if (channel.trySendBlocking(entry).isFailure) return false
+        tail = entry
+        true
+    }
+
+    suspend fun drain(deliver: (T) -> Unit) {
+        for (entry in channel) {
+            val values = synchronized(entry) {
+                entry.consumed = true
+                entry.values
+            }
+            for (value in values) deliver(value)
+        }
+    }
+
+    fun close() {
+        closed = true
+        channel.close()
+    }
+}
 
 class InputDispatcher(
     private val host: String,
@@ -33,11 +105,7 @@ class InputDispatcher(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http = OkHttpClient.Builder()
-        .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 64
-            maxRequestsPerHost = 64
-        })
-        .connectionPool(okhttp3.ConnectionPool(16, 2, TimeUnit.MINUTES))
+        .connectionPool(okhttp3.ConnectionPool(1, 2, TimeUnit.MINUTES))
         .connectTimeout(1, TimeUnit.SECONDS)
         .readTimeout(1, TimeUnit.SECONDS)
         .writeTimeout(1, TimeUnit.SECONDS)
@@ -49,71 +117,34 @@ class InputDispatcher(
     @Volatile
     var sessionId: String? = null
 
-    @Volatile
     private var streamWidth: Int = displayWidth
-
-    @Volatile
     private var streamHeight: Int = displayHeight
-
-    private val latestMove = java.util.concurrent.atomic.AtomicReference<JSONObject?>(null)
-    private val latestStylus = java.util.concurrent.atomic.AtomicReference<JSONObject?>(null)
-    private val latestTouches = java.util.concurrent.ConcurrentHashMap<Int, JSONObject>()
     private var lastStylusPressure: Float = 0f
 
-    private val discrete = MutableSharedFlow<JSONObject>(
-        replay = 0,
-        extraBufferCapacity = 64,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
+    
+    private val pointer = VirtualCursor(streamWidth, streamHeight)
+    private val queue = OrderedInputQueue<JSONObject>()
 
     init {
         scope.launch {
-            while (isActive) {
-                val (sendX, sendY) = synchronized(this@InputDispatcher) {
-                    val x = pendingDx
-                    val y = pendingDy
-                    pendingDx = 0f
-                    pendingDy = 0f
-                    x to y
-                }
-                if (kotlin.math.abs(sendX) >= 0.15f || kotlin.math.abs(sendY) >= 0.15f) {
-                    val payload = JSONObject().apply {
-                        put("Pointer", JSONObject().apply {
-                            put("RelativeMove", JSONObject().apply {
-                                put("dx", sendX.toDouble())
-                                put("dy", sendY.toDouble())
-                            })
-                        })
-                    }
-                    send(payload)
-                }
-                val move = latestMove.getAndSet(null)
-                if (move != null) {
-                    send(move)
-                }
-                val st = latestStylus.getAndSet(null)
-                if (st != null) {
-                    send(st)
-                }
-                if (latestTouches.isNotEmpty()) {
-                    val slots = latestTouches.keys.toList()
-                    for (slot in slots) {
-                        latestTouches.remove(slot)?.let { send(it) }
-                    }
-                }
-                kotlinx.coroutines.delay(16)
+            try {
+                queue.drain { send(it) }
+            } finally {
+                queue.close()
+                http.dispatcher.executorService.shutdown()
+                http.connectionPool.evictAll()
+                scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
             }
-        }
-        scope.launch {
-            discrete.collect { send(it) }
         }
         Log.i(TAG, "InputDispatcher created → target=$host:$port")
     }
 
+    @Synchronized
     fun resize(newWidth: Int, newHeight: Int) {
         if (newWidth <= 0 || newHeight <= 0) return
         streamWidth = newWidth
         streamHeight = newHeight
+        pointer.resize(newWidth, newHeight)
     }
 
     fun updateToken(value: String) {
@@ -121,37 +152,41 @@ class InputDispatcher(
     }
 
     @Volatile
-    private var cursorX: Float = (streamWidth / 2).toFloat()
-
-    @Volatile
-    private var cursorY: Float = (streamHeight / 2).toFloat()
-
     var pointerSpeed: Float = 1.0f
 
-    fun move(localX: Float, localY: Float, containerW: Int, containerH: Int) {
-        val (x, y) = map(localX, localY, containerW, containerH)
-        cursorX = x.toFloat()
-        cursorY = y.toFloat()
-        latestMove.set(JSONObject().apply {
-            put("Pointer", JSONObject().apply {
-                put("Move", JSONObject().apply { put("x", x); put("y", y) })
+    private fun movePayload(): JSONObject = JSONObject().apply {
+        put("Pointer", JSONObject().apply {
+            put("Move", JSONObject().apply {
+                put("x", pointer.x.toDouble())
+                put("y", pointer.y.toDouble())
             })
         })
     }
 
-    private var pendingDx = 0f
-    private var pendingDy = 0f
-
-    fun moveDelta(dx: Float, dy: Float) {
-        val effSensitivity = 1.0f * pointerSpeed
-        synchronized(this) {
-            pendingDx += dx * effSensitivity
-            pendingDy += dy * effSensitivity
-            cursorX = (cursorX + dx * effSensitivity).coerceIn(0f, streamWidth.toFloat())
-            cursorY = (cursorY + dy * effSensitivity).coerceIn(0f, streamHeight.toFloat())
-        }
+    private fun buttonPayload(button: Int, pressed: Boolean): JSONObject = JSONObject().apply {
+        put("Pointer", JSONObject().apply {
+            put("Button", JSONObject().apply {
+                put("button", button)
+                put("pressed", pressed)
+            })
+        })
     }
 
+    @Synchronized
+    fun move(localX: Float, localY: Float, containerW: Int, containerH: Int) {
+        val (x, y) = map(localX, localY, containerW, containerH)
+        pointer.place(x.toFloat(), y.toFloat())
+        queue.submit(listOf(movePayload()), "pointer")
+    }
+
+    @Synchronized
+    fun moveDelta(dx: Float, dy: Float) {
+        val sensitivity = pointerSpeed
+        pointer.applyDelta(dx * sensitivity, dy * sensitivity)
+        queue.submit(listOf(movePayload()), "pointer")
+    }
+
+    @Synchronized
     fun pointerAction(
         localX: Float?,
         localY: Float?,
@@ -162,76 +197,36 @@ class InputDispatcher(
     ) {
         if (localX != null && localY != null && containerW > 0 && containerH > 0) {
             val (x, y) = map(localX, localY, containerW, containerH)
-            cursorX = x.toFloat()
-            cursorY = y.toFloat()
-            latestMove.set(null)
-            val movePayload = JSONObject().apply {
-                put("Pointer", JSONObject().apply {
-                    put("Move", JSONObject().apply {
-                        put("x", x.toDouble())
-                        put("y", y.toDouble())
-                    })
-                })
-            }
-            discrete.tryEmit(movePayload)
+            pointer.place(x.toFloat(), y.toFloat())
         }
-        val btnPayload = JSONObject().apply {
-            put("Pointer", JSONObject().apply {
-                put("Button", JSONObject().apply {
-                    put("button", button)
-                    put("pressed", pressed)
-                })
-            })
-        }
-        discrete.tryEmit(btnPayload)
+        queue.submit(listOf(movePayload(), buttonPayload(button, pressed)))
     }
 
+    @Synchronized
     fun button(button: Int, pressed: Boolean) {
-        val btn = JSONObject()
-        btn.put("button", button)
-        btn.put("pressed", pressed)
-        val payload = JSONObject()
-        payload.put("Pointer", JSONObject().apply { put("Button", btn) })
-        discrete.tryEmit(payload)
+        queue.submit(listOf(buttonPayload(button, pressed)))
     }
 
-    fun leftClick() {
-        val payload = JSONObject().apply {
-            put("Pointer", JSONObject().apply {
-                put("Move", JSONObject().apply {
-                    put("x", cursorX.toDouble())
-                    put("y", cursorY.toDouble())
-                })
-            })
-        }
-        discrete.tryEmit(payload)
-        button(1, true)
-        button(1, false)
+    fun leftClick() = click(1)
+
+    fun rightClick() = click(3)
+
+    @Synchronized
+    private fun click(button: Int) {
+        queue.submit(listOf(movePayload(), buttonPayload(button, true), buttonPayload(button, false)))
     }
 
-    fun rightClick() {
-        val payload = JSONObject().apply {
-            put("Pointer", JSONObject().apply {
-                put("Move", JSONObject().apply {
-                    put("x", cursorX.toDouble())
-                    put("y", cursorY.toDouble())
-                })
-            })
-        }
-        discrete.tryEmit(payload)
-        button(3, true)
-        button(3, false)
-    }
-
+    @Synchronized
     fun wheel(deltaY: Double) {
         val payload = JSONObject().apply {
             put("Pointer", JSONObject().apply {
                 put("Wheel", JSONObject().apply { put("delta_y", deltaY) })
             })
         }
-        discrete.tryEmit(payload)
+        queue.submit(listOf(payload))
     }
 
+    @Synchronized
     fun touch(
         slot: Int,
         id: Int,
@@ -252,15 +247,13 @@ class InputDispatcher(
                 put("pressed", pressed)
             })
         }
-        if (coalesce && pressed) {
-            latestTouches[slot] = payload
-        } else {
-            latestTouches.remove(slot)
-            discrete.tryEmit(payload)
+        queue.submit(listOf(payload), if (coalesce && pressed) "touch:$slot:$id" else null)
+        if (!coalesce || !pressed) {
             Log.d(TAG, "touch slot=$slot id=$id pressed=$pressed")
         }
     }
 
+    @Synchronized
     fun stylus(
         xPx: Float,
         yPx: Float,
@@ -295,21 +288,19 @@ class InputDispatcher(
         val payload = JSONObject().apply {
             put("Stylus", stylusObj)
         }
-        if (pressure == 0f || lastStylusPressure == 0f) {
-            discrete.tryEmit(payload)
-        } else {
-            latestStylus.set(payload)
-        }
-        lastStylusPressure = pressure
+        val motionKey = if (pressNorm > 0 && lastStylusPressure > 0) "stylus" else null
+        queue.submit(listOf(payload), motionKey)
+        lastStylusPressure = pressNorm.toFloat()
     }
 
+    @Synchronized
     fun key(code: Int, pressed: Boolean) {
         val payload = JSONObject()
         payload.put("Key", JSONObject().apply {
             put("code", code)
             put("pressed", pressed)
         })
-        discrete.tryEmit(payload)
+        queue.submit(listOf(payload))
     }
 
     fun control(
@@ -350,13 +341,11 @@ class InputDispatcher(
     }
 
     fun release() {
-        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
-        http.dispatcher.executorService.shutdown()
-        http.connectionPool.evictAll()
+        queue.close()
     }
 
     private fun map(localX: Float, localY: Float, w: Int, h: Int): Pair<Int, Int> {
-        if (w == 0 || h == 0) return 0 to 0
+        if (w <= 0 || h <= 0) return 0 to 0
         val nx = (localX / w).coerceIn(0f, 1f)
         val ny = (localY / h).coerceIn(0f, 1f)
         return (nx * streamWidth).roundToInt() to (ny * streamHeight).roundToInt()
@@ -377,26 +366,21 @@ class InputDispatcher(
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
             val sid = sessionIdProvider?.invoke()?.takeIf { it.isNotBlank() } ?: sessionId
             sid?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
-            http.newCall(builder.build()).enqueue(object : okhttp3.Callback {
-                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                    Log.v(TAG, "send failed: ${e.message}")
-                }
-                override fun onResponse(call: okhttp3.Call, resp: okhttp3.Response) {
-                    resp.use {
-                        if (it.code == 401) {
-                            val now = android.os.SystemClock.elapsedRealtime()
-                            if (now - lastUnauthorizedMs > 1000L) {
-                                lastUnauthorizedMs = now
-                                Log.w(TAG, "send rejected with HTTP 401, triggering re-auth")
-                                token = ""
-                                onUnauthorized?.invoke()
-                            }
-                        } else if (!it.isSuccessful) {
-                            Log.w(TAG, "send rejected with HTTP ${it.code}")
-                        }
+            val call = http.newCall(builder.build())
+            call.timeout().timeout(1, TimeUnit.SECONDS)
+            call.execute().use { resp ->
+                if (resp.code == 401) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastUnauthorizedMs > 1000L) {
+                        lastUnauthorizedMs = now
+                        Log.w(TAG, "send rejected with HTTP 401, triggering re-auth")
+                        token = ""
+                        onUnauthorized?.invoke()
                     }
+                } else if (!resp.isSuccessful) {
+                    Log.w(TAG, "send rejected with HTTP ${resp.code}")
                 }
-            })
+            }
         } catch (e: Exception) {
             Log.v(TAG, "send dispatch failed: ${e.message}")
         }

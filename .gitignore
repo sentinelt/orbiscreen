@@ -33,6 +33,10 @@ captures/
 local.properties
 **/local.properties
 
+# ── Android SDK scratch state ──
+/.android/
+/scratch/
+
 # ── AUR Local Test Artifacts ──
 /src/
 /pkg/
@@ -48,6 +52,7 @@ google-services.json
 # ── Editor artifacts ──
 .vscode/
 .idea/
+.kilo/
 *.swp
 *.sublime-*
 .playwright-mcp/

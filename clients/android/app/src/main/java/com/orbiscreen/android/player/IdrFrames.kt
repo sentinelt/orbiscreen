@@ -3,10 +3,6 @@
 
 package com.orbiscreen.android.player
 
-/**
- * Length-prefixed Annex-B video frames as sent on the reliable IDR TCP
- * path (`GET /idr`, same codec as WebTransport `encode_video`).
- */
 object IdrFrames {
     const val TYPE_VIDEO: Int = 1
     const val MAX_FRAME: Int = 4 * 1024 * 1024

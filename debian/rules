@@ -10,15 +10,13 @@ export DH_VERBOSE = 1
 	dh $@
 
 override_dh_auto_build:
-	@echo "Using bundled pre-built release binaries for Launchpad..."
+	cargo build --release --workspace --locked
 
 override_dh_auto_install:
 	@mkdir -p debian/orbiscreen/usr/bin
-	install -Dm0755 target/release/orbiscreen debian/orbiscreen/usr/bin/orbiscreen || install -Dm0755 bin/orbiscreen debian/orbiscreen/usr/bin/orbiscreen
+	install -Dm0755 target/release/orbiscreen debian/orbiscreen/usr/bin/orbiscreen
 	if [ -f target/release/orbiscreen-gui ]; then \
 		install -Dm0755 target/release/orbiscreen-gui debian/orbiscreen/usr/bin/orbiscreen-gui; \
-	elif [ -f bin/orbiscreen-gui ]; then \
-		install -Dm0755 bin/orbiscreen-gui debian/orbiscreen/usr/bin/orbiscreen-gui; \
 	fi
 	install -Dm0644 data/orbiscreen.svg debian/orbiscreen/usr/share/icons/hicolor/scalable/apps/orbiscreen.svg
 	ln -sf orbiscreen.svg debian/orbiscreen/usr/share/icons/hicolor/scalable/apps/orbiscreen-gui.svg
@@ -33,6 +31,7 @@ override_dh_auto_install:
 	install -Dm0644 clients/web/index.html debian/orbiscreen/usr/share/orbiscreen/client/index.html
 	install -Dm0644 clients/web/style.css debian/orbiscreen/usr/share/orbiscreen/client/style.css
 	install -Dm0644 clients/web/app.js debian/orbiscreen/usr/share/orbiscreen/client/app.js
+	install -Dm0644 clients/web/annexb.js debian/orbiscreen/usr/share/orbiscreen/client/annexb.js
 	mkdir -p debian/orbiscreen/usr/share/orbiscreen/client/vendor
 	cp -rf clients/web/vendor/. debian/orbiscreen/usr/share/orbiscreen/client/vendor/
 	install -Dm0644 data/orbiscreen.service debian/orbiscreen/usr/lib/systemd/user/orbiscreen.service
@@ -40,3 +39,4 @@ override_dh_auto_install:
 override_dh_shlibdeps:
 
 override_dh_auto_test:
+	cargo test --workspace --locked

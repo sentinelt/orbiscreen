@@ -3,7 +3,6 @@
 
 package com.orbiscreen.android.player
 
-/** Systematic Cauchy Reed-Solomon over GF(256). Matches crates/orbiscreen-transport/src/fec.rs. */
 object Fec {
     fun parityCount(k: Int): Int = when {
         k <= 3 -> 0

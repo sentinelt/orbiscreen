@@ -1,14 +1,8 @@
 // Orbiscreen - fec.rs (GPL-3.0-or-later)
 // https://github.com/shadow-x78/orbiscreen
 
-//! Systematic Cauchy Reed-Solomon over GF(256) for datagram erasures.
-//!
-//! Data shards are sent unchanged. Parity shards use `frag >= frags`
-//! (`frags` is the data count k). Ladder: 1–3 → 0, 4–16 → 2, 17–64 → 3, 65+ → 4.
-
 use std::sync::OnceLock;
 
-/// Parity shard count for a data-fragment count `k`.
 pub fn parity_count(k: usize) -> usize {
     match k {
         0..=3 => 0,
@@ -30,9 +24,6 @@ pub struct Shards {
     pub parity: Vec<Vec<u8>>,
 }
 
-/// Split an AU into data shards and optional parity. When FEC is on (`k >= 4`)
-/// a little-endian u32 length prefix is prepended so recovered last shards
-/// can be trimmed.
 pub fn shard_au(au: &[u8], chunk: usize) -> Shards {
     let chunk = chunk.max(1);
     if au.is_empty() {
@@ -59,8 +50,6 @@ pub fn shard_au(au: &[u8], chunk: usize) -> Shards {
     }
 }
 
-/// Pad data parts to a common width and emit `parity_count(k)` parity shards.
-/// The last part may be short; it is zero-padded for the codeword only.
 pub fn protect(parts: &[Vec<u8>]) -> Protect {
     let k = parts.len();
     let m = parity_count(k);
@@ -78,16 +67,13 @@ pub fn protect(parts: &[Vec<u8>]) -> Protect {
     } else {
         encode(&data, m)
     };
-    // Restore original last-shard lengths on the data we return for sending.
+
     for (i, p) in parts.iter().enumerate() {
         data[i].truncate(p.len());
     }
     Protect { data, parity }
 }
 
-/// Recover missing data shards. `data[i] == None` is an erasure.
-/// `parity.len()` is m; missing parity is `None`.
-/// On success every data slot is `Some`.
 pub fn recover(data: &mut [Option<Vec<u8>>], parity: &[Option<Vec<u8>>]) -> bool {
     let k = data.len();
     if k == 0 {
@@ -124,7 +110,6 @@ pub fn recover(data: &mut [Option<Vec<u8>>], parity: &[Option<Vec<u8>>]) -> bool
     }
     let used_p = &present_p[..missing.len()];
 
-    // Pad known data to width.
     let mut known: Vec<Vec<u8>> = vec![Vec::new(); k];
     for (i, slot) in data.iter().enumerate() {
         if let Some(v) = slot {
@@ -134,7 +119,6 @@ pub fn recover(data: &mut [Option<Vec<u8>>], parity: &[Option<Vec<u8>>]) -> bool
         }
     }
 
-    // rhs[row][byte] = received_parity - contribution of known data.
     let miss_n = missing.len();
     let mut rhs = vec![vec![0u8; width]; miss_n];
     for (row, &p) in used_p.iter().enumerate() {
@@ -151,7 +135,6 @@ pub fn recover(data: &mut [Option<Vec<u8>>], parity: &[Option<Vec<u8>>]) -> bool
         }
     }
 
-    // A[row][col] = C[used_p[row]][missing[col]]
     let mut a = vec![vec![0u8; miss_n]; miss_n];
     for (row, &p) in used_p.iter().enumerate() {
         for (col, &d) in missing.iter().enumerate() {
@@ -171,15 +154,12 @@ pub fn recover(data: &mut [Option<Vec<u8>>], parity: &[Option<Vec<u8>>]) -> bool
             }
             out[byte] = s;
         }
-        // Last shard: keep the original short length if any other shard
-        // told us the padded width. Caller strips via au_len prefix.
+
         data[d] = Some(out);
     }
     true
 }
 
-/// Concatenate recovered data parts and strip the 4-byte length prefix used
-/// when FEC is on (`k >= 4`).
 pub fn concat_fec_au(parts: &[Vec<u8>]) -> Option<Vec<u8>> {
     if parts.is_empty() {
         return None;

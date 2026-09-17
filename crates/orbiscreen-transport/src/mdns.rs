@@ -41,9 +41,6 @@ impl Advertiser {
 
         let mut properties = std::collections::HashMap::new();
         properties.insert("version".to_string(), env!("CARGO_PKG_VERSION").to_string());
-        if let Some(token) = &desc.token {
-            properties.insert("token".to_string(), token.clone());
-        }
 
         let service_info = ServiceInfo::new(
             SERVICE_TYPE,

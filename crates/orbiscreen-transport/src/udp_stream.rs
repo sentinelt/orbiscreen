@@ -532,7 +532,6 @@ impl AuSendResult {
     }
 }
 
-/// Record one fragment send. Returns whether later fragments of this AU should still go out.
 fn note_send(out: &mut AuSendResult, outcome: SendOutcome) -> bool {
     out.attempted += 1;
     match outcome {
@@ -551,7 +550,6 @@ fn note_send(out: &mut AuSendResult, outcome: SendOutcome) -> bool {
     }
 }
 
-/// Walk an AU's fragments. `Failed` keeps going; only `TooBig` stops the rest.
 #[cfg(test)]
 fn dispatch_au_sends<F>(n: usize, mut send: F) -> AuSendResult
 where
@@ -742,6 +740,7 @@ pub async fn run_udp_hub(
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     limits: UdpLimits,
     displays: Option<super::DisplayCtl>,
+    registry: Option<std::sync::Arc<crate::pairing::PairingRegistry>>,
 ) {
     let sock = match bind_udp_socket(port) {
         Ok(s) => s,
@@ -763,6 +762,7 @@ pub async fn run_udp_hub(
     let recv_sock = sock.clone();
     let recv_clients = clients.clone();
     let recv_token = token.clone();
+    let recv_registry = registry.clone();
     let recv_idr = idr_tx.clone();
     let recv_stats = stats.clone();
     let recv_limits = limits;
@@ -777,6 +777,7 @@ pub async fn run_udp_hub(
                     let Ok((n, addr)) = res else { continue };
                     let ctx = IncomingCtx {
                         token: &recv_token,
+                        registry: recv_registry.as_deref(),
                         sock: &recv_sock,
                         clients: &recv_clients,
                         idr_tx: recv_idr.as_ref(),
@@ -917,6 +918,7 @@ pub async fn run_udp_hub(
 #[allow(missing_debug_implementations)]
 struct IncomingCtx<'a> {
     token: &'a str,
+    registry: Option<&'a crate::pairing::PairingRegistry>,
     sock: &'a std::sync::Arc<UdpSocket>,
     clients: &'a tokio::sync::Mutex<HashMap<SocketAddr, UdpClient>>,
     idr_tx: Option<&'a tokio::sync::mpsc::Sender<()>>,
@@ -966,13 +968,23 @@ async fn forward_udp_video(fwd: UdpForward, mut video_rx: broadcast::Receiver<H2
     }
 }
 
+fn udp_credential_allowed(
+    credential: &str,
+    shared_token: &str,
+    registry: Option<&crate::pairing::PairingRegistry>,
+) -> bool {
+    !shared_token.is_empty()
+        && super::token_eq(credential, shared_token)
+        && !registry.is_some_and(|registry| registry.verify(credential).is_some())
+}
+
 async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
     match parse_packet(buf) {
         Some(Packet::Hello {
             token: got,
             session,
         }) => {
-            if !super::token_eq(&got, ctx.token) {
+            if !udp_credential_allowed(&got, ctx.token, ctx.registry) {
                 warn!(%addr, "UDP hello rejected");
                 ctx.stats.note_auth_failure();
                 return;
@@ -1022,13 +1034,13 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                 }
             }
         }
-        Some(Packet::Bye(session)) => {
+        Some(Packet::Bye(_)) => {
             let mut map = ctx.clients.lock().await;
             if let Some(mut client) = map.remove(&addr) {
                 if let Some(task) = client.video_task.take() {
                     task.abort();
                 }
-                let id = session.or(client.session.take());
+                let id = client.session.take();
                 if let (Some(ctl), Some(id)) = (ctx.displays, id) {
                     ctl.detach(&id).await;
                     ctl.release(&id).await;
@@ -1132,8 +1144,6 @@ async fn request_client_idr(
     request_idr_sender(idr_tx);
 }
 
-/// Arm UDP video once PMTU is known, then force an IDR so the first
-/// datagrams the client can receive include a keyframe.
 async fn enable_udp_video(
     sock: &UdpSocket,
     addr: SocketAddr,
@@ -1152,6 +1162,83 @@ async fn enable_udp_video(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn paired_udp_is_rejected_without_attach_or_client_state() {
+        let registry = crate::pairing::PairingRegistry::load_from(None).unwrap();
+        let request = registry.request_pairing("tablet", "192.0.2.1").unwrap();
+        let client = registry.approve(&request.request_id).unwrap().unwrap();
+        let credential = registry.claim(&request.request_id, "192.0.2.1").unwrap();
+        assert!(registry.bind_session(&client.client_id, "owned-session"));
+        let sock = std::sync::Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let clients = tokio::sync::Mutex::new(HashMap::new());
+        let stats = super::super::Stats::default();
+        let (commands, mut commands_rx) = tokio::sync::mpsc::channel(8);
+        let displays = super::super::DisplayCtl::new(commands);
+        let ctx = IncomingCtx {
+            token: "shared",
+            registry: Some(&registry),
+            sock: &sock,
+            clients: &clients,
+            idr_tx: None,
+            stats: &stats,
+            limits: UdpLimits::default(),
+            displays: Some(&displays),
+        };
+        for session in [None, Some("owned-session"), Some("other-session")] {
+            handle_incoming(
+                &encode_hello_session(&credential, session),
+                peer.local_addr().unwrap(),
+                &ctx,
+            )
+            .await;
+            assert!(clients.lock().await.is_empty());
+            assert!(commands_rx.try_recv().is_err());
+        }
+        assert!(registry.revoke(&client.client_id).unwrap());
+        assert!(!udp_credential_allowed(
+            &credential,
+            "shared",
+            Some(&registry)
+        ));
+        assert!(udp_credential_allowed("shared", "shared", Some(&registry)));
+        assert!(udp_credential_allowed("shared", "shared", None));
+        assert!(!udp_credential_allowed("", "", None));
+        assert!(!udp_credential_allowed("invalid", "shared", None));
+    }
+
+    #[tokio::test]
+    async fn udp_bye_uses_attached_session_not_packet_session() {
+        let sock = std::sync::Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = peer.local_addr().unwrap();
+        let mut client = new_client(UdpLimits::default());
+        client.session = Some("attached-session".into());
+        let clients = tokio::sync::Mutex::new(HashMap::from([(addr, client)]));
+        let stats = super::super::Stats::default();
+        stats.client_started();
+        let (commands, mut commands_rx) = tokio::sync::mpsc::channel(8);
+        let displays = super::super::DisplayCtl::new(commands);
+        let ctx = IncomingCtx {
+            token: "shared",
+            registry: None,
+            sock: &sock,
+            clients: &clients,
+            idr_tx: None,
+            stats: &stats,
+            limits: UdpLimits::default(),
+            displays: Some(&displays),
+        };
+        handle_incoming(&encode_bye(Some("other-session")), addr, &ctx).await;
+        assert!(
+            matches!(commands_rx.try_recv().unwrap(), crate::DisplayCommand::Detach { id } if id == "attached-session")
+        );
+        assert!(
+            matches!(commands_rx.try_recv().unwrap(), crate::DisplayCommand::Release { id } if id == "attached-session")
+        );
+        assert!(clients.lock().await.is_empty());
+    }
 
     #[test]
     fn video_roundtrip() {

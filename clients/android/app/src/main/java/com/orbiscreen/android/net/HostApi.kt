@@ -13,6 +13,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.security.MessageDigest
+import java.security.cert.CertificateException
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.X509TrustManager
+import okhttp3.HttpUrl
 
 private const val TAG = "Orbi.Api"
 private val JSON = "application/json".toMediaType()
@@ -49,7 +58,97 @@ class HostApi {
         val connector: String,
     )
 
+    suspend fun certificateFingerprint(host: String, port: Int): String = withContext(Dispatchers.IO) {
+        val endpoint = pairingUrl(host, port)
+        var observed: X509Certificate? = null
+        val trust = object : X509TrustManager {
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+                throw CertificateException("Client certificates are not accepted")
+            }
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                observed = chain.firstOrNull()
+                throw CertificateException("Host fingerprint confirmation required")
+            }
+        }
+        val ssl = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
+        Socket().use { raw ->
+            raw.connect(InetSocketAddress(endpoint.host, endpoint.port), 3000)
+            (ssl.socketFactory.createSocket(raw, endpoint.host, endpoint.port, true) as SSLSocket).use { socket ->
+                socket.soTimeout = 3000
+                try {
+                    socket.startHandshake()
+                } catch (e: javax.net.ssl.SSLException) {
+                    if (observed == null) throw e
+                }
+            }
+        }
+        fingerprint(requireNotNull(observed) { "Host did not present a certificate" }.encoded)
+    }
+
+    fun pinnedClient(host: String, port: Int, pin: String): OkHttpClient {
+        val endpoint = pairingUrl(host, port)
+        require(pin.matches(Regex("[0-9A-F]{64}")))
+        val trust = object : X509TrustManager {
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+                throw CertificateException("Client certificates are not accepted")
+            }
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                val cert = chain.firstOrNull() ?: throw CertificateException("Missing host certificate")
+                cert.checkValidity()
+                if (fingerprint(cert.encoded) != pin) throw CertificateException("Host fingerprint changed")
+            }
+        }
+        val ssl = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
+        return client.newBuilder()
+            .sslSocketFactory(ssl.socketFactory, trust)
+            .hostnameVerifier { hostname, session ->
+                hostname == endpoint.host && runCatching {
+                    fingerprint(session.peerCertificates.first().encoded) == pin
+                }.getOrDefault(false)
+            }
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    suspend fun requestPairing(host: String, port: Int, pin: String, name: String): String =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(pairingUrl(host, port).newBuilder().encodedPath("/api/pair/request").build())
+                .post(JSONObject().put("name", name).toString().toRequestBody(JSON)).build()
+            val obj = pairingResponse(pinnedClient(host, port, pin), request)
+            check(obj.getString("status") == "pending") { "Host did not accept pairing" }
+            obj.getString("request_id").also { check(it.isNotBlank()) }
+        }
+
+    data class PairingStatus(val status: String, val credential: String? = null)
+
+    suspend fun pairingStatus(host: String, port: Int, pin: String, requestId: String): PairingStatus =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder().url(
+                pairingUrl(host, port).newBuilder().encodedPath("/api/pair/status")
+                    .addQueryParameter("id", requestId).build()
+            ).build()
+            val obj = pairingResponse(pinnedClient(host, port, pin), request)
+            val status = obj.getString("status")
+            check(status in setOf("pending", "approved", "unknown")) { "Invalid pairing response" }
+            PairingStatus(status, if (status == "approved") obj.getString("credential").also {
+                check(it.isNotBlank()) { "Host returned an empty credential" }
+            } else null)
+        }
+
+    private fun pairingResponse(client: OkHttpClient, request: Request): JSONObject =
+        client.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "Pairing failed (HTTP ${response.code})" }
+            JSONObject(readBoundedBody(response) ?: error("Empty pairing response"))
+        }
+
     suspend fun token(host: String, port: Int): String? = withContext(Dispatchers.IO) {
+        if (!isLoopback(host)) return@withContext null
         withTimeoutOrNull(3500) {
             try {
                 val req = Request.Builder()
@@ -60,7 +159,7 @@ class HostApi {
                     if (!resp.isSuccessful) return@withTimeoutOrNull null
                     val body = readBoundedBody(resp) ?: return@withTimeoutOrNull null
                     val t = JSONObject(body).optString("token").takeIf { it.isNotBlank() && it != "null" }
-                    Log.i(TAG, "token fetched: prefix=${t?.take(4)}")
+                    Log.i(TAG, "token fetch completed: available=${t != null}")
                     t
                 }
             } catch (e: Exception) {
@@ -107,6 +206,7 @@ class HostApi {
                     .put("key", identity.key)
                     .put("width", identity.width)
                     .put("height", identity.height)
+                    .put("bitrate_kbps", identity.bitrateKbps)
                     .toString()
                 val req = Request.Builder()
                     .url("http://$host:$port/api/session")
@@ -224,5 +324,16 @@ class HostApi {
 
     companion object {
         private const val MAX_RESPONSE_BYTES = 64L * 1024L
+
+        fun isLoopback(host: String): Boolean = host == "127.0.0.1" || host == "localhost" || host == "::1"
+
+        fun pairingUrl(host: String, port: Int): HttpUrl {
+            require(!isLoopback(host)) { "LAN pairing requires a network host" }
+            require(port in 1..65533) { "Signaling port must leave room for TLS port + 2" }
+            return HttpUrl.Builder().scheme("https").host(host).port(port + 2).build()
+        }
+
+        fun fingerprint(encodedCertificate: ByteArray): String = MessageDigest.getInstance("SHA-256")
+            .digest(encodedCertificate).joinToString("") { "%02X".format(it) }
     }
 }

@@ -4,8 +4,10 @@
 
 [![الإصدار](https://img.shields.io/badge/version-0.29.0-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الإصدار](https://img.shields.io/badge/version-0.29.1-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.30.0-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
+![Rust](https://img.shields.io/badge/rust-1.92%2B-16a34a?style=flat-square&logo=rust)
 ![المنصّة](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
 
 </div>
@@ -65,6 +67,7 @@
 |---|---|:---:|
 | السابق (HTTP MPEG-TS + ExoPlayer) | إزاحة البث المباشر المستهدفة لـ ExoPlayer (الأدنى 8، الأقصى 48) | **24 ملي ثانية** |
 | هذا البروتوكول (UDP Annex-B + MediaCodec) | زمن الإرسال حتى التجميع `delay` | **2–4 ملي ثانية** (نموذجياً 2–3) |
+| هذا البروتوكول (UDP Annex-B + MediaCodec) | زمن الإرسال حتى التجميع `delay` | **2-4 ملي ثانية** (نموذجياً 2-3) |
 
 يمثل هذا انخفاضاً بنحو **10 أضعاف** في تأخير النقل والمشغّل مقارنة بالبث المباشر لـ HTTP (توفير قرابة 20 ملي ثانية). وتظل مدة الترميز والعرض متماثلة في كلا المسارين. يستمر مسار HTTP `/stream` في استخدام إزاحة الـ 24 ملي ثانية.
 
@@ -75,3 +78,4 @@
 | `ORBISCREEN_UDP_MAX_DATAGRAM` | الحد الأعلى لبحث PMTU (مقيد بين 576 و 65507، الافتراضي 1472) |
 | `ORBISCREEN_UDP_DROP_ABOVE` | محاكاة فقدان الحزم الأكبر من الحجم المحدد (خطاف اختبار PMTU) |
 | `ORBISCREEN_UDP_LOSS_PCT` | إسقاط الحزم الصادرة عشوائياً بنسبة 0–90% (خطاف اختبار الفقدان) |
+| `ORBISCREEN_UDP_LOSS_PCT` | إسقاط الحزم الصادرة عشوائياً بنسبة 0-90% (خطاف اختبار الفقدان) |

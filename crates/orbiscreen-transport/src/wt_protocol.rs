@@ -203,8 +203,6 @@ pub enum VideoCarrier {
     Datagram,
 }
 
-/// IDR (and SPS/PPS sitting on that AU) go on a reliable stream.
-/// P-frames stay on datagrams so a late frame can still be dropped.
 pub fn video_carrier(is_keyframe: bool, datagrams_ok: bool) -> VideoCarrier {
     if is_keyframe || !datagrams_ok {
         VideoCarrier::Reliable
@@ -442,7 +440,7 @@ mod tests {
             .iter()
             .map(|d| parse_video_datagram(d).unwrap())
             .collect();
-        assert_eq!(parsed[0].frags, 5); // 4*chunk + 4-byte length prefix
+        assert_eq!(parsed[0].frags, 5);
         let k = parsed[0].frags as usize;
         let m = crate::fec::parity_count(k);
         assert_eq!(parsed.len(), k + m);

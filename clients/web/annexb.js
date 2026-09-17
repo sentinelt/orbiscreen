@@ -697,8 +697,8 @@
             this.holeSince = 0;
             return [{ type: "gap", dropped }];
         }
-        // Reliable IDR has no datagram seq. Drop held P-frames from the
-        // old GOP and accept the next P as the start of the new one.
+        
+        
         onReliableKeyframe() {
             this.pending.clear();
             this.held.clear();

@@ -84,9 +84,7 @@ pub fn protocol_names_for(client_name: &str, device_key: Option<&str>) -> (Strin
     } else {
         trimmed.to_string()
     };
-    // KWin persists virtual-output settings by connectorName only (no EDID).
-    // Prefer a stable per-device key so two tablets with the same model
-    // name do not share one output. Description is label only.
+
     let slug = device_key
         .map(sanitize_client_name)
         .filter(|s| !s.is_empty())
@@ -632,8 +630,7 @@ impl KwinVirtualCapture {
         } else {
             spec.description.clone()
         };
-        // Per-client connectors are the KWin identity key. Do not strip them
-        // from kwinoutputconfig.json or scale/position will not come back.
+
         if spec.names.is_empty() {
             if let Some(path) = kwin_output_config_path() {
                 for name in &names {

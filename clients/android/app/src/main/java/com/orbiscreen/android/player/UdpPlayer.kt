@@ -107,8 +107,8 @@ class UdpPlayer(
         session: String? = null,
         httpPort: Int = 0,
     ): Boolean {
-        // Replacing the socket is not a leave. Bye would release the
-        // display session and the next Hello would attach to a dead id.
+        
+        
         stop(sendBye = false)
         this.width = width
         this.height = height
@@ -281,8 +281,8 @@ class UdpPlayer(
             TYPE_PMTU -> {
                 if (data.size < 7) return
                 Log.i(TAG, "PMTU confirmed datagram=${le16(data, 5)}")
-                // Video can flow now; ask for a keyframe so we do not
-                // start mid-GOP on P-frames that were not sent earlier.
+                
+                
                 requestIdr()
             }
             TYPE_HELLO_ACK -> {}
@@ -416,9 +416,9 @@ class UdpPlayer(
             return
         }
         try {
-            // Free completed outputs first so a slow dequeue does not
-            // skip a P-frame. A hole in an infinite GOP (VA-API has no
-            // intra-refresh) stays on screen as block artifacts until IDR.
+            
+            
+            
             drainOutputs(c, sentNs)
             var inIx = c.dequeueInputBuffer(8_000)
             if (inIx < 0) {
@@ -445,8 +445,8 @@ class UdpPlayer(
             inBuf.clear()
             inBuf.put(au)
             val flags = if (key) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-            // Real-time PTS so vendor low-latency stays on. A 1,2,3 µs
-            // counter looks like a file timeline and many SoCs then hold ~200 ms.
+            
+            
             val ptsUs = System.nanoTime() / 1000L
             if (sentNs > 0L) {
                 sentQueue.addLast(sentNs)

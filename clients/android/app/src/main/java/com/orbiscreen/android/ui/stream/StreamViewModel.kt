@@ -18,10 +18,22 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val TOKEN_REFRESH_INTERVAL_MS = 30_000L
+
+enum class LoginStage { Checking, ConfirmFingerprint, Pending, Failed, Ready }
+
+data class LoginState(
+    val stage: LoginStage = LoginStage.Checking,
+    val fingerprint: String = "",
+    val message: String = "Connecting securely to host…",
+    val saved: Boolean = false,
+)
 
 data class StreamState(
     val host: String,
@@ -36,6 +48,7 @@ data class StreamState(
     val resolutionLabel: String = "1920x1080",
 )
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StreamViewModel(
     private val context: Context,
     private val prefs: PrefsStore,
@@ -44,7 +57,16 @@ class StreamViewModel(
 ) : ViewModel() {
 
     private val hostApi = HostApi()
-    private val playerHolder = PlayerHolder(context, prefs)
+    private val credentialStore = com.orbiscreen.android.data.HostCredentialStore(context)
+    private val isLan = !HostApi.isLoopback(host)
+    private val _login = MutableStateFlow(LoginState())
+    val login: StateFlow<LoginState> = _login.asStateFlow()
+    private var loginJob: kotlinx.coroutines.Job? = null
+    private var proxy: com.orbiscreen.android.net.PinnedHostProxy? = null
+    private var transportHost = if (isLan) "127.0.0.1" else host
+    private var transportPort = if (isLan) 0 else port
+    private val holders = MutableStateFlow(PlayerHolder(context, prefs))
+    private val playerHolder get() = holders.value
     private var inputDispatcher: InputDispatcher? = null
     private var sessionToken: String? = null
     private var displaySessionId: String? = null
@@ -67,8 +89,10 @@ class StreamViewModel(
     )
     val state: StateFlow<StreamState> = _state.asStateFlow()
 
-    val player get() = playerHolder.player
-    val udpPlayer get() = playerHolder.udpPlayer
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val player = holders.flatMapLatest { it.player }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val udpPlayer = holders.flatMapLatest { it.udpPlayer }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val streamStats get() = playerHolder.stats
 
     fun detectNativeDisplay(): Triple<Int, Int, Int> {
@@ -93,6 +117,7 @@ class StreamViewModel(
     }
 
     private suspend fun freshToken(forceRefresh: Boolean = false): String {
+        if (isLan) return proxy?.localToken.orEmpty()
         return withContext(Dispatchers.IO) {
             if (!forceRefresh && !sessionToken.isNullOrBlank()) {
                 return@withContext sessionToken!!
@@ -112,7 +137,7 @@ class StreamViewModel(
 
     init {
         viewModelScope.launch {
-            playerHolder.event.collect { ev ->
+            holders.flatMapLatest { it.event }.collect { ev ->
                 _state.value = _state.value.copy(event = ev)
                 when (ev) {
                     is StreamEvent.Playing -> waitingForKeyframe = false
@@ -136,17 +161,139 @@ class StreamViewModel(
                 }
             }
         }
+        beginLogin()
         viewModelScope.launch {
+            _state.collect { s ->
+                inputDispatcher?.resize(s.displayWidth, s.displayHeight)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive && !isLan) {
+                delay(TOKEN_REFRESH_INTERVAL_MS)
+                freshToken(forceRefresh = true)
+            }
+        }
+        viewModelScope.launch {
+            holders.flatMapLatest { it.event }.collect { ev ->
+                if (ev is StreamEvent.Playing && isLan) {
+                    prefs.recentHost = com.orbiscreen.android.data.RecentHost(host = host, port = port)
+                }
+            }
+        }
+    }
+
+    fun beginLogin() {
+        loginJob?.cancel()
+        loginJob = viewModelScope.launch {
+            _login.value = LoginState()
+            try {
+                if (!isLan) {
+                    _login.value = LoginState(LoginStage.Ready)
+                    connectStream()
+                    return@launch
+                }
+                val saved = withContext(Dispatchers.IO) { credentialStore.load(host, port) }
+                if (saved != null) {
+                    _login.value = LoginState(saved = true)
+                    connectPaired(saved)
+                } else {
+                    val pin = hostApi.certificateFingerprint(host, port)
+                    _login.value = LoginState(LoginStage.ConfirmFingerprint, pin)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _login.value = _login.value.copy(stage = LoginStage.Failed,
+                    message = "Secure connection failed. Check host address, TLS port, and certificate. If the host was reinstalled, forget its saved login and verify the new fingerprint.")
+            }
+        }
+    }
+
+    fun confirmFingerprint() {
+        val pin = _login.value.takeIf { it.stage == LoginStage.ConfirmFingerprint }?.fingerprint ?: return
+        loginJob?.cancel()
+        loginJob = viewModelScope.launch {
+            _login.value = LoginState(LoginStage.Pending, pin, "Approve this device on the host.")
+            try {
+                val name = com.orbiscreen.android.net.ClientIdentity.from(context).name
+                val id = hostApi.requestPairing(host, port, pin, name)
+                repeat(150) {
+                    delay(2000)
+                    val status = hostApi.pairingStatus(host, port, pin, id)
+                    when (status.status) {
+                        "approved" -> {
+                            val saved = com.orbiscreen.android.data.HostCredential(pin, requireNotNull(status.credential))
+                            withContext(Dispatchers.IO) { credentialStore.save(host, port, saved) }
+                            _login.value = _login.value.copy(saved = true)
+                            connectPaired(saved)
+                            return@launch
+                        }
+                        "unknown" -> error("Pairing expired or denied")
+                    }
+                }
+                error("Pairing timed out")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _login.value = _login.value.copy(stage = LoginStage.Failed,
+                    message = "Pairing failed, expired, or was denied. Retry and approve on the host. If approval was already claimed, request pairing again.")
+            }
+        }
+    }
+
+    fun forgetLogin() {
+        loginJob?.cancel()
+        loginJob = viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { credentialStore.forget(host, port) }
+                resetTransport()
+                beginLogin()
+            } catch (_: Exception) {
+                _login.value = LoginState(LoginStage.Failed, message = "Could not remove saved login.")
+            }
+        }
+    }
+
+    private suspend fun connectPaired(saved: com.orbiscreen.android.data.HostCredential) {
+        resetTransport()
+        proxy = withContext(Dispatchers.IO) {
+            com.orbiscreen.android.net.PinnedHostProxy(host, port, saved.fingerprint, saved.credential) {
+                viewModelScope.launch {
+                    resetTransport()
+                    _login.value = LoginState(LoginStage.Failed, saved = true,
+                        message = "Host rejected this login. Forget the saved login and request approval again.")
+                }
+            }
+        }
+        transportPort = requireNotNull(proxy).port
+        sessionToken = requireNotNull(proxy).localToken
+        connectStream()
+        _login.value = LoginState(LoginStage.Ready, saved = true)
+    }
+
+    private fun resetTransport() {
+        playerHolder.release()
+        holders.value = PlayerHolder(context, prefs)
+        waitingForKeyframe = false
+        inputDispatcher?.release()
+        inputDispatcher = null
+        proxy?.close()
+        proxy = null
+        sessionToken = null
+        displaySessionId = null
+    }
+
+    private suspend fun connectStream() {
             val info = withContext(Dispatchers.IO) {
                 var t: String? = null
                 var retries = 0
                 while (t.isNullOrBlank() && retries < 6) {
-                    t = hostApi.token(host, port)
+                    t = freshToken()
                     if (!t.isNullOrBlank()) break
                     delay(250)
                     retries++
                 }
-                val i = hostApi.info(host, port)
+                val i = hostApi.info(transportHost, transportPort)
                 t to i
             }
             sessionToken = info.first
@@ -154,10 +301,11 @@ class StreamViewModel(
             val token = info.first.orEmpty()
             val identity = com.orbiscreen.android.net.ClientIdentity.from(context)
             val session = if (token.isNotBlank()) {
-                hostApi.openSession(host, port, token, identity)
+                hostApi.openSession(transportHost, transportPort, token, identity)
             } else {
                 null
             }
+            check(!isLan || session != null) { "Authenticated display session could not be opened" }
             displaySessionId = session?.id
             inputDispatcher?.sessionId = session?.id
             val hostInfo = info.second
@@ -187,37 +335,15 @@ class StreamViewModel(
             )
             playerHolder.refreshSession = { reopenDisplaySession() }
             playerHolder.build(
-                host,
-                port,
+                transportHost,
+                transportPort,
                 session,
                 tokenProvider = { freshToken() },
             )
-        }
-        viewModelScope.launch {
-            _state.collect { s ->
-                inputDispatcher?.resize(s.displayWidth, s.displayHeight)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                delay(TOKEN_REFRESH_INTERVAL_MS)
-                val t = withContext(Dispatchers.IO) { hostApi.token(host, port) }
-                if (!t.isNullOrBlank() && t != sessionToken) {
-                    sessionToken = t
-                    inputDispatcher?.updateToken(t)
-                }
-            }
-        }
-        viewModelScope.launch {
-            playerHolder.event.collect { ev ->
-                if (ev is StreamEvent.Playing && host != "127.0.0.1" && host != "localhost") {
-                    prefs.recentHost = com.orbiscreen.android.data.RecentHost(host = host, port = port)
-                }
-            }
-        }
     }
 
     private fun requestIdr() {
+        if (isLan && (proxy == null || displaySessionId == null)) return
         waitingForKeyframe = true
         val udp = playerHolder.udpPlayer.value
         if (udp != null) {
@@ -232,8 +358,8 @@ class StreamViewModel(
 
     fun ensureInput(): InputDispatcher {
         val dispatcher = inputDispatcher ?: InputDispatcher(
-            host = state.value.host,
-            port = state.value.port,
+            host = transportHost,
+            port = transportPort,
             displayWidth = state.value.displayWidth,
             displayHeight = state.value.displayHeight,
             token = sessionToken ?: "",
@@ -246,8 +372,8 @@ class StreamViewModel(
             }
             inputDispatcher = it
         }
-        // Session is opened in init before the surface calls ensureInput.
-        // Always refresh so /input is not dropped when several displays exist.
+        
+        
         dispatcher.sessionId = displaySessionId
         sessionToken?.let { dispatcher.updateToken(it) }
         dispatcher.resize(state.value.displayWidth, state.value.displayHeight)
@@ -263,22 +389,35 @@ class StreamViewModel(
     }
 
     fun disconnect() {
+        loginJob?.cancel()
         val id = displaySessionId
         val token = sessionToken
+        val closingProxy = proxy
+        proxy = null
         displaySessionId = null
-        viewModelScope.launch(Dispatchers.IO) {
-            if (!id.isNullOrBlank() && !token.isNullOrBlank()) {
-                hostApi.closeSession(host, port, token, id)
+        sessionToken = null
+        waitingForKeyframe = false
+        inputDispatcher?.release()
+        inputDispatcher = null
+        playerHolder.release()
+        val closingHost = transportHost
+        val closingPort = transportPort
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (!id.isNullOrBlank() && !token.isNullOrBlank()) {
+                    hostApi.closeSession(closingHost, closingPort, token, id)
+                }
+            } finally {
+                closingProxy?.close()
             }
         }
-        playerHolder.release()
     }
 
     private suspend fun reopenDisplaySession(): com.orbiscreen.android.net.HostApi.SessionInfo? {
         val token = freshToken(forceRefresh = true)
         val identity = com.orbiscreen.android.net.ClientIdentity.from(context)
         val session = if (token.isNotBlank()) {
-            hostApi.openSession(host, port, token, identity)
+            hostApi.openSession(transportHost, transportPort, token, identity)
         } else {
             null
         }
@@ -296,7 +435,7 @@ class StreamViewModel(
         return session
     }
 
-    fun retry() = playerHolder.retry(state.value.host, state.value.port) { freshToken(forceRefresh = true) }
+    fun retry() = playerHolder.retry(transportHost, transportPort) { freshToken(forceRefresh = true) }
 
     fun toggleKeyboard() {
         _state.value = _state.value.copy(keyboardVisible = !_state.value.keyboardVisible)

@@ -139,6 +139,11 @@ fun StreamScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val login by viewModel.login.collectAsState()
+    if (login.stage != LoginStage.Ready) {
+        LanLoginScreen(viewModel, login, onBack)
+        return
+    }
     val player = viewModel.player.collectAsState().value
     val udp = viewModel.udpPlayer.collectAsState().value
     var showControls by remember { mutableStateOf(false) }

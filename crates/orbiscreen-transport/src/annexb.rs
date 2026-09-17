@@ -74,8 +74,6 @@ pub fn is_annexb(bytes: &[u8]) -> bool {
     start_code_len(bytes, 0).is_some()
 }
 
-/// Guarantee SPS/PPS sit in front of a key AU so a reliable-stream recovery
-/// frame is decodable on its own.
 pub fn with_parameter_sets(au: &[u8], cached: Option<&SpsPps>) -> Vec<u8> {
     let found = extract_sps_pps(au);
     if !found.sps.is_empty() && !found.pps.is_empty() {

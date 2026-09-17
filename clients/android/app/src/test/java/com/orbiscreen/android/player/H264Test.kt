@@ -55,7 +55,7 @@ class H264Test {
 
     @Test
     fun emulationPreventionDoesNotBreakSliceType() {
-        // first_mb=0 (1), slice_type=0 (1) → bits 11, plus leftover zeros.
+        
         val nal = byteArrayOf(0x61, 0xC0.toByte())
         assertEquals(FrameKind.P, H264.sliceKind(nal))
     }
