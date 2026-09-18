@@ -229,7 +229,7 @@ class PlayerHolder(
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
             val loadControl = DefaultLoadControl.Builder()
-                .setBufferDurationsMs(120, 350, 50, 80)
+                .setBufferDurationsMs(30, 80, 15, 25)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
@@ -243,9 +243,9 @@ class PlayerHolder(
                         .setMimeType(MimeTypes.VIDEO_MP2T)
                         .setLiveConfiguration(
                             MediaItem.LiveConfiguration.Builder()
-                                .setTargetOffsetMs(50)
-                                .setMinPlaybackSpeed(0.98f)
-                                .setMaxPlaybackSpeed(1.05f)
+                                .setTargetOffsetMs(30)
+                                .setMinPlaybackSpeed(1.0f)
+                                .setMaxPlaybackSpeed(1.0f)
                                 .build()
                         )
                         .build()
@@ -531,15 +531,15 @@ private class LowLatencyVideoRenderer(
     override fun shouldDropBuffersToKeyframe(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
         if (earlyUs < -300_000) {
             onLagDetected()
-            // Allow ExoPlayer to flush non-keyframe buffers when severely late
-            return true
         }
+        // Always return false: Android MediaCodec output buffers rarely preserve BUFFER_FLAG_KEY_FRAME.
+        // Returning true triggers an irreversible ExoPlayer state where all decoded frames are discarded indefinitely.
         return false
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        // Use ExoPlayer's default drop logic (drops frames > ~30ms late).
-        // Returning false unconditionally fills the output buffer queue and freezes the display.
-        return super.shouldDropOutputBuffer(earlyUs, elapsedRealtimeUs, isLastBuffer)
+        // Drop only when severely delayed (>150ms). ExoPlayer's default 30ms threshold is overly
+        // aggressive for 90Hz 2560x1600 rendering and causes noticeable mouse cursor frame skipping.
+        return earlyUs < -150_000L && !isLastBuffer
     }
 }

@@ -26,7 +26,7 @@ async function invoke(cmd, args = {}) {
         };
     }
     if (cmd === "get_autostart") return false;
-    if (cmd === "get_app_version") return "0.30.4";
+    if (cmd === "get_app_version") return "0.30.5";
     return null;
 }
 

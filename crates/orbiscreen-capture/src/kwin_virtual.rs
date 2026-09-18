@@ -854,7 +854,7 @@ impl KwinVirtualCapture {
             .set_state(gstreamer::State::Playing)
             .map_err(|e| KwinVirtualError::Wayland(format!("State error: {e}")))?;
 
-        let pump_interval = Duration::from_millis(11);
+        let pump_interval = Duration::from_millis(16);
         let hint = accepted_name
             .clone()
             .unwrap_or_else(|| VIRTUAL_OUTPUT_CONNECTOR.to_string());

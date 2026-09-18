@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.5] - 2026-09-18
+
+Eliminate permanent display freezing, resolve non-monotonic PTS timestamp regressions, drastically cut mouse input latency by tuning ExoPlayer buffer sizes, and prevent 90Hz mouse stuttering.
+
+### 🐛 Bug Fixes
+- **Eliminate Android permanent display freeze (`PlayerHolder.kt`)**:
+  - Reverted `shouldDropBuffersToKeyframe` to always return `false`. When returning `true`, ExoPlayer discards all decoded frames waiting for a `BUFFER_FLAG_KEY_FRAME` that Android hardware decoders rarely attach to output buffers, causing the tablet display to freeze permanently on the desktop background.
+- **Fix non-monotonic PTS timestamp jumps (`client_display.rs`, `main.rs`)**:
+  - Replaced the flawed PTS formula `now_ns.max(next_min).min(...)` which jumped backwards in time during rapid frame bursts (such as fast mouse movement).
+  - Adopted strictly monotonic real-time wall-clock timestamps: `now_ns.max(last_pts_ns.saturating_add(1_000))`, ensuring timestamps never jump backwards and never drift into the future.
+- **Drastically reduce mouse input latency (`PlayerHolder.kt`)**:
+  - Reduced ExoPlayer `loadControl` buffer durations from `(120, 350, 50, 80)` ms down to `(30, 80, 15, 25)` ms, eliminating ~100ms of artificial buffer delay on mouse cursor movements.
+  - Locked `LiveConfiguration` playback speed strictly to `1.0f` (removing `0.98f` - `1.05f` oscillation) to eliminate micro-jitter and speed hunting.
+- **Prevent micro frame drops at 90Hz (`PlayerHolder.kt`)**:
+  - Relaxed `shouldDropOutputBuffer` drop threshold to 150ms instead of ExoPlayer's default 30ms, preventing discarded frames when high-resolution 2560x1600 decoding experiences momentary jitter.
+- **Compositor damage pump rate (`kwin_virtual.rs`)**:
+  - Restored damage pump interval to 16ms to avoid full-screen compositor damage flooding during mouse activity.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.5`.
+- Incremented Android client `versionCode` to `110` and updated `versionName` to `"0.30.5"`.
+- Updated `tauri.conf.json` version to `0.30.5`.
+- Bumped PKGBUILD `pkgver` to `0.30.5`.
+- Added `0.30.5-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.4] - 2026-09-18
 
 Fix frozen display and stuck mouse regression introduced in v0.30.3, which was caused by conflicting appsink configuration and dead code in ExoPlayer frame-drop overrides.

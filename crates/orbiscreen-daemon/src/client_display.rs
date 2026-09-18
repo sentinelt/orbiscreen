@@ -461,14 +461,13 @@ async fn open_session(
 fn spawn_capture_pump(
     capture: Arc<KwinVirtualCapture>,
     encoder: Arc<Encoder>,
-    refresh_hz: u32,
+    _refresh_hz: u32,
     mut shutdown: watch::Receiver<bool>,
 ) {
     tokio::spawn(async move {
-        let frame_dur = Encoder::frame_duration_ns(refresh_hz);
         const KEEPALIVE: Duration = Duration::from_millis(100);
         let started = std::time::Instant::now();
-        let mut last_pts_ns: u64 = frame_dur;
+        let mut last_pts_ns: u64 = 0;
         let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> = None;
         loop {
             if *shutdown.borrow() {
@@ -482,8 +481,7 @@ fn spawn_capture_pump(
                 Ok(Ok(frame)) => {
                     keepalive_frame = Some((frame.width, frame.height, frame.data.to_vec()));
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    let next_min = last_pts_ns.saturating_add(1);
-                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    let pts_ns = now_ns.max(last_pts_ns.saturating_add(1_000));
                     last_pts_ns = pts_ns;
                     if let Err(e) =
                         encoder.push_frame_owned(frame.data, frame.width, frame.height, pts_ns)
@@ -504,8 +502,7 @@ fn spawn_capture_pump(
                         continue;
                     };
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    let next_min = last_pts_ns.saturating_add(1);
-                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    let pts_ns = now_ns.max(last_pts_ns.saturating_add(1_000));
                     last_pts_ns = pts_ns;
                     if let Err(
                         orbiscreen_encode::EncodeError::Flushing

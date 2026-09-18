@@ -1,16 +1,27 @@
+orbiscreen (0.30.5-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.30.5 for Ubuntu noble.
+  * Eliminate permanent display freeze by never discarding buffers to keyframe in ExoPlayer.
+  * Fix non-monotonic backward jumps in PTS timestamps during frame bursts.
+  * Drastically cut mouse input latency by tuning ExoPlayer buffer durations to 30ms.
+  * Lock live playback speed to 1.0f to eliminate speed jitter.
+  * Relax frame dropping threshold to 150ms to prevent micro frame drops at 90Hz.
+  * Restore compositor damage pump interval to 16ms.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Thu, 18 Sep 2026 18:35:00 +0300
+
 orbiscreen (0.30.4-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.30.4 for Ubuntu noble.
-  * Fix frozen display and stuck mouse caused by appsink back-pressure regression in v0.30.4.
-  * Remove dead code in ExoPlayer shouldDropOutputBuffer that was left behind from v0.30.4.
-  * Allow shouldDropBuffersToKeyframe to flush P-frames when decoder is severely late (>300ms).
+  * Fix frozen display and stuck mouse caused by appsink back-pressure regression in v0.30.3.
+  * Remove dead code in ExoPlayer shouldDropOutputBuffer that was left behind from v0.30.3.
   * Revert KWin FRAME_CHANNEL_CAPACITY from 4 to 2 for stable low-latency frame delivery.
 
  -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Thu, 18 Sep 2026 16:27:00 +0300
 
-orbiscreen (0.30.4-1~ubuntunoble1) noble; urgency=medium
+orbiscreen (0.30.3-1~ubuntunoble1) noble; urgency=medium
 
-  * Release 0.30.4 for Ubuntu noble.
+  * Release 0.30.3 for Ubuntu noble.
   * Eliminate micro frame drops by disabling aggressive 30ms ExoPlayer frame drop.
   * Clamp PTS to prevent forward timestamp drift during frame bursts.
   * Prevent silent GStreamer appsink drops in the H.264 encoder pipeline.

@@ -2441,7 +2441,6 @@ async fn run_secondary_display_session(
     let encoder_for_pump = Arc::clone(&encoder);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
-        let frame_dur = Encoder::frame_duration_ns(spec.refresh_rate_hz);
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
         let mut last_pts_ns: u64 = 0;
@@ -2455,8 +2454,7 @@ async fn run_secondary_display_session(
                         continue;
                     };
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    let next_min = last_pts_ns.saturating_add(1);
-                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    let pts_ns = now_ns.max(last_pts_ns.saturating_add(1_000));
                     last_pts_ns = pts_ns;
                     if let Err(
                         orbiscreen_encode::EncodeError::Flushing
@@ -2476,8 +2474,7 @@ async fn run_secondary_display_session(
                         last_snapshot = Some(std::time::Instant::now());
                     }
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    let next_min = last_pts_ns.saturating_add(1);
-                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    let pts_ns = now_ns.max(last_pts_ns.saturating_add(1_000));
                     last_pts_ns = pts_ns;
                     if let Err(
                         orbiscreen_encode::EncodeError::Flushing
@@ -2885,7 +2882,6 @@ async fn run_start(
     let encoder_for_pump = Arc::clone(&encoder);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
-        let frame_dur = Encoder::frame_duration_ns(spec.refresh_rate_hz);
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
         let mut last_pts_ns: u64 = 0;
@@ -2899,8 +2895,7 @@ async fn run_start(
                         continue;
                     };
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    let next_min = last_pts_ns.saturating_add(1);
-                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    let pts_ns = now_ns.max(last_pts_ns.saturating_add(1_000));
                     last_pts_ns = pts_ns;
                     if let Err(e) = encoder.push_frame(data.as_ref(), *width, *height, pts_ns) {
                         match e {
@@ -2933,8 +2928,7 @@ async fn run_start(
                         last_snapshot = Some(std::time::Instant::now());
                     }
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    let next_min = last_pts_ns.saturating_add(1);
-                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    let pts_ns = now_ns.max(last_pts_ns.saturating_add(1_000));
                     last_pts_ns = pts_ns;
                     let data_len = frame.data.len();
                     if let Err(e) = encoder.push_frame_owned(frame.data, width, height, pts_ns) {
