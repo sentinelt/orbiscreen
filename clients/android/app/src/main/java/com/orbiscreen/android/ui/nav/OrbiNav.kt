@@ -74,7 +74,6 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
 
     LaunchedEffect(Unit) {
         UsbAccessoryManager.autoConnectEvent.collect { port ->
-            if (prefs.autoConnectUsb && port != lastAutoConnectedPort) {
             if (prefs.autoConnectUsb && !manualDisconnect && port != lastAutoConnectedPort) {
                 val curRoute = nav.currentDestination?.route
                 if (curRoute != Routes.STREAM) {
