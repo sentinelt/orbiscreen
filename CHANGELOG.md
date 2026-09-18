@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.3] - 2026-09-18
+
+Eliminate micro frame drops by disabling aggressive 30ms ExoPlayer frame drop in Android client, clamp PTS to prevent forward timestamp drift during frame bursts, disable appsink frame dropping in encoder pipeline, and optimize KWin virtual display damage pump for 90Hz.
+
+### ⚡ Performance & Fluidity
+- **Eliminate Android ExoPlayer frame drops**:
+  - Overrode `shouldDropOutputBuffer` in `LowLatencyVideoRenderer` to return `false` instead of calling `super.shouldDropOutputBuffer()`, which dropped frames whenever presentation delay exceeded 30ms.
+  - Ensured all frames are rendered immediately upon decode without discarding P-frames, while preserving `shouldDropBuffersToKeyframe` recovery triggering on severe lag (>300ms).
+- **PTS drift elimination**:
+  - Clamped PTS progression in `client_display.rs` using `now_ns.max(next_min).min(now_ns.saturating_add(frame_dur))` to eliminate forward timestamp drift during frame bursts and synchronize PTS strictly to wall clock.
+- **Encoder appsink drop prevention**:
+  - Configured GStreamer `appsink` with `set_drop(false)` and `max_buffers(4)` in `orbiscreen-encode`, preventing silent frame dropping between the encoder element and downstream consumer channel.
+- **KWin virtual display capture & damage pump**:
+  - Increased capture `FRAME_CHANNEL_CAPACITY` from 2 to 4 to accommodate compositor frame bursts without dropping.
+  - Adjusted damage pump interval from 16ms to 11ms to support smooth, responsive 90Hz damage triggering.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.3`.
+- Incremented Android client `versionCode` to `108` and updated `versionName` to `"0.30.3"`.
+- Updated `tauri.conf.json` version to `0.30.3`.
+- Bumped PKGBUILD `pkgver` to `0.30.3`.
+- Added `0.30.3-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+- Synchronized documentation badges across all architecture, troubleshooting, and specification guides.
+
 ## [v0.30.2] - 2026-09-18
 
 Fix GUI unresponsiveness and syntax error (Issue #81), add dynamic version query via Tauri and D-Bus, prevent manual disconnect auto-reconnection loop in Android and Web clients, and guarantee clean daemon shutdown and pipeline teardown on SIGINT/Ctrl+C.

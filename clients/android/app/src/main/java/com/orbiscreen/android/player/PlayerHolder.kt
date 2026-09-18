@@ -536,6 +536,11 @@ private class LowLatencyVideoRenderer(
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
+        
+        
+        
+        
+        return super.shouldDropOutputBuffer(earlyUs, elapsedRealtimeUs, isLastBuffer)
         return false
     }
 }

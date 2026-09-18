@@ -1,3 +1,13 @@
+orbiscreen (0.30.3-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.30.3 for Ubuntu noble.
+  * Eliminate micro frame drops by disabling aggressive 30ms ExoPlayer frame drop.
+  * Clamp PTS to prevent forward timestamp drift during frame bursts.
+  * Prevent silent GStreamer appsink drops in the H.264 encoder pipeline.
+  * Optimize KWin virtual display damage pump interval to 11ms for 90Hz.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Fri, 18 Sep 2026 13:30:00 +0300
+
 orbiscreen (0.30.2-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.30.2 for Ubuntu noble.
