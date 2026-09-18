@@ -27,7 +27,7 @@ use super::{sample_to_captured_frame, CaptureError, CapturedFrame};
 
 const POINTER_EMBEDDED: u32 = 2;
 
-const FRAME_CHANNEL_CAPACITY: usize = 2;
+const FRAME_CHANNEL_CAPACITY: usize = 4;
 
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 const EVENT_POLL_TIMEOUT_MS: i32 = 100;
@@ -854,7 +854,7 @@ impl KwinVirtualCapture {
             .set_state(gstreamer::State::Playing)
             .map_err(|e| KwinVirtualError::Wayland(format!("State error: {e}")))?;
 
-        let pump_interval = Duration::from_millis(16);
+        let pump_interval = Duration::from_millis(11);
         let hint = accepted_name
             .clone()
             .unwrap_or_else(|| VIRTUAL_OUTPUT_CONNECTOR.to_string());

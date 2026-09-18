@@ -482,9 +482,11 @@ fn spawn_capture_pump(
                 Ok(Ok(frame)) => {
                     keepalive_frame = Some((frame.width, frame.height, frame.data.to_vec()));
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    last_pts_ns = now_ns.max(last_pts_ns.saturating_add(frame_dur));
+                    let next_min = last_pts_ns.saturating_add(1);
+                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    last_pts_ns = pts_ns;
                     if let Err(e) =
-                        encoder.push_frame_owned(frame.data, frame.width, frame.height, last_pts_ns)
+                        encoder.push_frame_owned(frame.data, frame.width, frame.height, pts_ns)
                     {
                         match e {
                             orbiscreen_encode::EncodeError::Flushing
@@ -502,11 +504,13 @@ fn spawn_capture_pump(
                         continue;
                     };
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-                    last_pts_ns = now_ns.max(last_pts_ns.saturating_add(frame_dur));
+                    let next_min = last_pts_ns.saturating_add(1);
+                    let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
+                    last_pts_ns = pts_ns;
                     if let Err(
                         orbiscreen_encode::EncodeError::Flushing
                         | orbiscreen_encode::EncodeError::Eos,
-                    ) = encoder.push_frame(data, *width, *height, last_pts_ns)
+                    ) = encoder.push_frame(data, *width, *height, pts_ns)
                     {
                         break;
                     }
