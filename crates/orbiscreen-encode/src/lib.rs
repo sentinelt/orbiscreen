@@ -308,8 +308,6 @@ impl Encoder {
         appsink.set_sync(false);
         appsink.set_drop(true);
         appsink.set_max_buffers(1);
-        appsink.set_drop(false);
-        appsink.set_max_buffers(4);
         appsink.set_caps(Some(
             &gstreamer::Caps::builder("video/x-h264")
                 .field("stream-format", "byte-stream")

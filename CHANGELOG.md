@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.4] - 2026-09-18
+
+Fix frozen display and stuck mouse regression introduced in v0.30.3, which was caused by conflicting appsink configuration and dead code in ExoPlayer frame-drop overrides.
+
+### 🐛 Bug Fixes
+- **Encoder appsink back-pressure (critical freeze fix)**:
+  - Removed duplicate `set_drop(false)` / `set_max_buffers(4)` calls in `orbiscreen-encode/src/lib.rs` that were silently overriding the correct `set_drop(true)` / `set_max_buffers(1)` settings. This caused full encoder pipeline stall when the Android client consumed frames slowly, resulting in a completely frozen display.
+- **ExoPlayer dead code removal**:
+  - Removed unreachable `return false` after `return super.shouldDropOutputBuffer(...)` in `LowLatencyVideoRenderer.shouldDropOutputBuffer()`. The dead code was a leftover from a failed edit attempt.
+- **`shouldDropBuffersToKeyframe` now acts on severe lag**:
+  - Previously called `onLagDetected()` but still returned `false`, meaning the decoder could never flush to a keyframe when > 300ms behind. Now returns `true` when `earlyUs < -300_000`, allowing ExoPlayer to discard P-frames and recover quickly.
+- **KWin capture channel capacity reverted**:
+  - `FRAME_CHANNEL_CAPACITY` reverted from `4` back to `2` to restore stable low-latency frame delivery without burst accumulation.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.4`.
+- Incremented Android client `versionCode` to `109` and updated `versionName` to `"0.30.4"`.
+- Updated `tauri.conf.json` version to `0.30.4`.
+- Bumped PKGBUILD `pkgver` to `0.30.4`.
+- Added `0.30.4-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.3] - 2026-09-18
 
 Eliminate micro frame drops by disabling aggressive 30ms ExoPlayer frame drop in Android client, clamp PTS to prevent forward timestamp drift during frame bursts, disable appsink frame dropping in encoder pipeline, and optimize KWin virtual display damage pump for 90Hz.

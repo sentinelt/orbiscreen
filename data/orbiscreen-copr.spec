@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.30.3
+Version:        0.30.4
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,8 +143,11 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
-* Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.3-1
-- Release 0.30.3: Eliminate micro frame drops by disabling aggressive 30ms ExoPlayer frame drop in Android client, clamp PTS to prevent forward drift during bursts, disable appsink frame dropping in encoder pipeline, and optimize KWin virtual display damage pump for 90Hz.
+* Thu Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.4-1
+- Release 0.30.4: Fix frozen display and stuck mouse regression from v0.30.4 caused by appsink back-pressure (duplicate set_drop/set_max_buffers override), ExoPlayer dead code, and shouldDropBuffersToKeyframe not acting on severe lag.
+
+* Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.4-1
+- Release 0.30.4: Eliminate micro frame drops by disabling aggressive 30ms ExoPlayer frame drop in Android client, clamp PTS to prevent forward drift during bursts, disable appsink frame dropping in encoder pipeline, and optimize KWin virtual display damage pump for 90Hz.
 
 * Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.2-1
 - Release 0.30.2: Fix GUI unresponsiveness and syntax error (Issue #81), add dynamic version detection in GUI and D-Bus daemon, prevent manual disconnect auto-reconnection loop in Android and Web clients, and ensure graceful pipeline shutdown on SIGINT/Ctrl+C.

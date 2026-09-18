@@ -27,7 +27,7 @@ use super::{sample_to_captured_frame, CaptureError, CapturedFrame};
 
 const POINTER_EMBEDDED: u32 = 2;
 
-const FRAME_CHANNEL_CAPACITY: usize = 4;
+const FRAME_CHANNEL_CAPACITY: usize = 2;
 
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 const EVENT_POLL_TIMEOUT_MS: i32 = 100;

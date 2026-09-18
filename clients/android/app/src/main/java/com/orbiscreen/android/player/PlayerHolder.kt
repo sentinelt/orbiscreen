@@ -531,16 +531,15 @@ private class LowLatencyVideoRenderer(
     override fun shouldDropBuffersToKeyframe(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
         if (earlyUs < -300_000) {
             onLagDetected()
+            // Allow ExoPlayer to flush non-keyframe buffers when severely late
+            return true
         }
         return false
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        
-        
-        
-        
+        // Use ExoPlayer's default drop logic (drops frames > ~30ms late).
+        // Returning false unconditionally fills the output buffer queue and freezes the display.
         return super.shouldDropOutputBuffer(earlyUs, elapsedRealtimeUs, isLastBuffer)
-        return false
     }
 }
