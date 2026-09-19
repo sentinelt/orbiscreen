@@ -547,7 +547,8 @@ pub fn run_accessory_bridge(
                                 close_frame.push(FRAME_FLAG_CLOSE);
                                 close_frame.extend_from_slice(&0u16.to_be_bytes());
                                 let _ = prio_tx_clone.send(close_frame);
-                                let mut map = tcp_streams_reader.lock().unwrap_or_else(|p| p.into_inner());
+                                let mut map =
+                                    tcp_streams_reader.lock().unwrap_or_else(|p| p.into_inner());
                                 map.remove(&stream_id);
                             });
 

@@ -187,7 +187,12 @@ impl DisplayCtl {
 
     pub async fn shutdown(&self) {
         let (reply, rx) = oneshot::channel();
-        if self.tx.send(DisplayCommand::Shutdown { reply }).await.is_ok() {
+        if self
+            .tx
+            .send(DisplayCommand::Shutdown { reply })
+            .await
+            .is_ok()
+        {
             let _ = rx.await;
         }
     }
