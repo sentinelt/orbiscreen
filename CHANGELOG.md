@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.7] - 2026-09-19
+
+Eliminate virtual display freezing and thread-pool deadlocks upon mouse cursor entry by reverting multi-threaded nearest-neighbor videoscale, restore safe crisp bilinear capture scaling, implement smart resolution negotiation auto-detecting client physical native display (2560x1536) by default while honoring explicit user overrides, and add tablet-friendly scaling presets (2560x1536, 1920x1152, 1280x768) in GUI dashboard.
+
+### ⚡ Performance & Fluidity
+- **Eliminate mouse cursor entry freezing and deadlocks (`kwin_virtual.rs`, `wayland.rs`)**:
+  - Reverted `videoscale method=0 n-threads=4` back to safe `videoscale` bilinear filtering without multi-threading contention.
+  - Fixes GStreamer thread-pool deadlock with `pipewiresrc` buffer callbacks when rapid mouse cursor damage events are produced by KWin upon mouse entry.
+  - Eliminates pixelation and jagged text caused by nearest-neighbor sampling, restoring crystal clear desktop rendering.
+
+### 🐛 Bug Fixes
+- **Smart Resolution Precedence & Negotiation (`client_display.rs`, `main.rs`)**:
+  - Automatically detects and adopts client physical native resolution (e.g. 2560x1536 for Lenovo P11 Pro) when no explicit user override has been set, preventing display aspect ratio distortion.
+  - Added `has_explicit_override` to `HubConfig`: when the user explicitly configures a resolution via `orbiscreen display set <SPEC>` or GUI dashboard, the override is strictly honored and active sessions are dynamically resized.
+- **Tablet Resolution Presets (`index.html`)**:
+  - Added dedicated resolution chips for tablet displays: `2.5K (2560x1536)`, `1152p (1920x1152)` (ideal ~1.33x high-DPI scaling), and `768p (1280x768)` (2x integer scale).
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.7`.
+- Incremented Android client `versionCode` to `112` and updated `versionName` to `"0.30.7"`.
+- Updated `tauri.conf.json` version to `0.30.7`.
+- Bumped PKGBUILD `pkgver` to `0.30.7`.
+- Added `0.30.7-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.6] - 2026-09-19
 
 Fix mouse lag and severe performance collapse under 125% scaling by multi-threading GStreamer scaling with nearest-neighbor interpolation, fix resolution changes being ignored on client connect, wire CLI and GUI resolution settings to active sessions via D-Bus, restore direct multi-touch mode by removing relative mouse injections from uinput touch handler, and deduplicate Android input networking.

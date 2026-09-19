@@ -1252,6 +1252,7 @@ async fn run_start_per_client(
         refresh_hz: cfg.display.refresh_rate_hz,
         default_width: cfg.display.width,
         default_height: cfg.display.height,
+        has_explicit_override: false,
     });
 
     let stats = std::sync::Arc::new(Stats::default());

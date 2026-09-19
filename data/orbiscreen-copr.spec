@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.30.6
+Version:        0.30.7
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,13 +143,16 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.7-1
+- Release 0.30.7: Eliminate display freezing and deadlock upon mouse entry by reverting multi-threaded nearest-neighbor videoscale; restore safe crisp bilinear videoscale capture; implement smart resolution negotiation auto-detecting client physical native display (2560x1536) by default while honoring explicit user overrides; add tablet-friendly scaling presets (2560x1536, 1920x1152, 1280x768) to GUI dashboard.
+
 * Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.6-1
 - Release 0.30.6: Eliminate 125% scaling latency and frame backlog with 4-thread nearest-neighbor videoscale; prioritize host display resolution configuration over client native screen on connect; dynamically update resolution and resize active sessions via D-Bus; restore Direct Touch mode by removing relative mouse movements from uinput touch injector; clean up Android input network dispatch.
 
-* Thu Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.5-1
+* Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.5-1
 - Release 0.30.5: Eliminate permanent display freeze by never discarding buffers to keyframe in ExoPlayer; fix non-monotonic backward jumps in PTS timestamps during frame bursts; cut input latency by tuning ExoPlayer buffer durations to 30ms and locking playback speed to 1.0f; relax drop threshold to 150ms to prevent micro frame drops at 90Hz.
 
-* Thu Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.4-1
+* Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.4-1
 - Release 0.30.4: Fix frozen display and stuck mouse regression from v0.30.3 caused by appsink back-pressure (duplicate set_drop/set_max_buffers override), ExoPlayer dead code, and shouldDropBuffersToKeyframe not acting on severe lag.
 
 * Fri Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.3-1

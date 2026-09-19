@@ -1,3 +1,13 @@
+orbiscreen (0.30.7-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.30.7 for Ubuntu noble.
+  * Eliminate display freezing and deadlocks upon mouse cursor entry by reverting multi-threaded nearest-neighbor videoscale.
+  * Restore safe crisp bilinear videoscale capture scaling.
+  * Implement smart resolution negotiation: auto-detect client physical resolution (2560x1536) by default while honoring explicit user overrides.
+  * Add tablet-friendly resolution presets (2560x1536, 1920x1152, 1280x768) in GUI dashboard.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Sat, 19 Sep 2026 14:00:00 +0300
+
 orbiscreen (0.30.6-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.30.6 for Ubuntu noble.

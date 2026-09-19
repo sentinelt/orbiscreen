@@ -20,6 +20,7 @@ pub struct HubConfig {
     pub refresh_hz: u32,
     pub default_width: u32,
     pub default_height: u32,
+    pub has_explicit_override: bool,
 }
 
 struct Session {
@@ -87,6 +88,22 @@ async fn run_hub(mut cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
     }
 }
 
+pub(crate) fn target_resolution(
+    cfg: &HubConfig,
+    client_width: u32,
+    client_height: u32,
+) -> (u32, u32) {
+    if cfg.has_explicit_override && cfg.default_width > 0 && cfg.default_height > 0 {
+        (cfg.default_width, cfg.default_height)
+    } else if client_width > 0 && client_height > 0 {
+        (client_width, client_height)
+    } else if cfg.default_width > 0 && cfg.default_height > 0 {
+        (cfg.default_width, cfg.default_height)
+    } else {
+        (1920, 1080)
+    }
+}
+
 async fn handle_cmd(
     cfg: &mut HubConfig,
     sessions: &mut HashMap<String, Session>,
@@ -102,6 +119,7 @@ async fn handle_cmd(
             cfg.default_width = width;
             cfg.default_height = height;
             cfg.refresh_hz = refresh_hz;
+            cfg.has_explicit_override = true;
         }
         DisplayCommand::Acquire {
             name,
@@ -111,11 +129,7 @@ async fn handle_cmd(
             bitrate_kbps,
             reply,
         } => {
-            let (target_w, target_h) = if cfg.default_width > 0 && cfg.default_height > 0 {
-                (cfg.default_width, cfg.default_height)
-            } else {
-                (width, height)
-            };
+            let (target_w, target_h) = target_resolution(cfg, width, height);
             if let Some(ref k) = key {
                 if let Some((existing_id, existing_session)) = sessions
                     .iter_mut()
@@ -854,5 +868,35 @@ mod tests {
                 "/org/kde/KWin/InputDevice/event260",
             ]
         );
+    }
+
+    #[test]
+    fn target_resolution_prioritizes_client_native_when_no_override() {
+        let cfg = super::HubConfig {
+            encode_kind: orbiscreen_encode::EncoderKind::Auto,
+            bitrate_kbps: 8000,
+            refresh_hz: 60,
+            default_width: 1920,
+            default_height: 1080,
+            has_explicit_override: false,
+        };
+        // Tablet reports 2560x1536: should be honored
+        assert_eq!(super::target_resolution(&cfg, 2560, 1536), (2560, 1536));
+        // Missing client size: fallback to cfg defaults
+        assert_eq!(super::target_resolution(&cfg, 0, 0), (1920, 1080));
+    }
+
+    #[test]
+    fn target_resolution_honors_explicit_user_override() {
+        let cfg = super::HubConfig {
+            encode_kind: orbiscreen_encode::EncoderKind::Auto,
+            bitrate_kbps: 8000,
+            refresh_hz: 90,
+            default_width: 1920,
+            default_height: 1152,
+            has_explicit_override: true,
+        };
+        // User explicitly set 1920x1152 in CLI/GUI: tablet 2560x1536 must NOT override it
+        assert_eq!(super::target_resolution(&cfg, 2560, 1536), (1920, 1152));
     }
 }
