@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.6] - 2026-09-19
+
+Fix mouse lag and severe performance collapse under 125% scaling by multi-threading GStreamer scaling with nearest-neighbor interpolation, fix resolution changes being ignored on client connect, wire CLI and GUI resolution settings to active sessions via D-Bus, restore direct multi-touch mode by removing relative mouse injections from uinput touch handler, and deduplicate Android input networking.
+
+### ⚡ Performance & Fluidity
+- **Eliminate 125% display scaling latency and frame accumulation (`kwin_virtual.rs`, `wayland.rs`)**:
+  - Replaced single-threaded bilinear `videoscale` with multi-threaded nearest-neighbor scaling (`videoscale method=0 n-threads=4`) in both KWin virtual output and Wayland portal capture pipelines.
+  - Slashes frame resizing duration from ~51ms down to ~5.7ms during desktop scaling, completely preventing progressive frame queue accumulation, memory churn, and mouse pointer delay over time.
+
+### 🐛 Bug Fixes
+- **Fix resolution configuration ignored on client connection (`client_display.rs`, `lib.rs`)**:
+  - Fixed an issue where the Android client's reported physical screen resolution (e.g. 2560x1536) unconditionally overrode the host's configured resolution in `DisplayCommand::Acquire`.
+  - The host's configured resolution (`cfg.default_width`, `cfg.default_height`) now takes precedence, allowing tablets with high-density displays to connect at legible resolutions (e.g. 1280x800, 1920x1080).
+  - Sessions requesting a different resolution than a cached idle session are now automatically refreshed and re-created at the requested resolution.
+- **Dynamic D-Bus resolution switching for GUI and CLI (`dbus.rs`, `display.rs`, `main.rs`)**:
+  - Added `DisplayCommand::SetDefaults` and `DisplayCtl::set_defaults` to dynamically update hub dimensions on the fly.
+  - Implemented `call_set_resolution` and wired `orbiscreen display set <SPEC>` directly to the running daemon via D-Bus, immediately resizing active client sessions without requiring a reconnect.
+  - Connected `DaemonHandles` with `DisplayCtl` so desktop GUI resolution chips immediately update active virtual monitor outputs.
+- **Restore Direct Touch mode (`x11.rs`)**:
+  - Removed erroneous relative mouse movements (`RelEvent::new(Rel::X, dx)`) that were being injected into `self.mouse_keyboard` inside `inject_touch`.
+  - Injected touch contacts are now dispatched exclusively to the virtual touchscreen via Linux multi-touch protocol B, enabling direct finger tapping, scrolling, and dragging without moving the mouse pointer as a trackpad.
+- **Clean up Android input network dispatch (`InputDispatcher.kt`)**:
+  - Deduplicated redundant connection pool and timeout declarations in `OkHttpClient.Builder()`.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.6`.
+- Incremented Android client `versionCode` to `111` and updated `versionName` to `"0.30.6"`.
+- Updated `tauri.conf.json` version to `0.30.6`.
+- Bumped PKGBUILD `pkgver` to `0.30.6`.
+- Added `0.30.6-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.5] - 2026-09-18
 
 Eliminate permanent display freezing, resolve non-monotonic PTS timestamp regressions, drastically cut mouse input latency by tuning ExoPlayer buffer sizes, and prevent 90Hz mouse stuttering.

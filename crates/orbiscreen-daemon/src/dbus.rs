@@ -16,6 +16,7 @@ pub struct DaemonHandles {
     pub encoder: &'static str,
     pub capture_backend: &'static str,
     pub shutdown_tx: tokio::sync::watch::Sender<bool>,
+    pub displays: Option<orbiscreen_transport::DisplayCtl>,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +79,14 @@ impl OrbiscreenDbusServer {
             if let Ok(toml) = orbiscreen_core::dump_config(&cfg) {
                 let _ = std::fs::write(&config_path, toml);
             }
+        }
+
+        if let Some(ctl) = &self.handles.displays {
+            ctl.set_defaults(width, height, fps).await;
+            if let Some(info) = ctl.lookup(None).await {
+                let _ = ctl.resize(&info.id, width, height).await;
+            }
+            return format!("Resolution updated to {width}x{height}@{fps}Hz");
         }
 
         let target_output = "Virtual-ORBISCREEN";
@@ -208,6 +217,52 @@ pub async fn request_status() -> zbus::Result<String> {
     call_status(&conn).await
 }
 
+pub async fn call_set_resolution(
+    conn: &zbus::Connection,
+    width: u32,
+    height: u32,
+    fps: u32,
+) -> zbus::Result<String> {
+    let proxy = zbus::Proxy::new(
+        conn,
+        "org.shadow-x78.Orbiscreen",
+        "/com/orbiscreen/Daemon",
+        "com.orbiscreen.Daemon",
+    )
+    .await?;
+    match tokio::time::timeout(
+        std::time::Duration::from_millis(1500),
+        proxy.call::<_, _, String>("SetResolution", &(width, height, fps)),
+    )
+    .await
+    {
+        Ok(Ok(res)) => Ok(res),
+        _ => {
+            let fallback = zbus::Proxy::new(
+                conn,
+                "com.orbiscreen.Daemon",
+                "/com/orbiscreen/Daemon",
+                "com.orbiscreen.Daemon",
+            )
+            .await?;
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(1500),
+                fallback.call::<_, _, String>("SetResolution", &(width, height, fps)),
+            )
+            .await
+            {
+                Ok(res) => res,
+                Err(_) => Err(zbus::Error::Failure("D-Bus request timed out".to_string())),
+            }
+        }
+    }
+}
+
+pub async fn request_set_resolution(width: u32, height: u32, fps: u32) -> zbus::Result<String> {
+    let conn = zbus::connection::Builder::session()?.build().await?;
+    call_set_resolution(&conn, width, height, fps).await
+}
+
 pub async fn run_dbus_server(handles: Arc<DaemonHandles>) -> zbus::Result<()> {
     let server = OrbiscreenDbusServer::new(handles);
     let _conn = zbus::connection::Builder::session()?
@@ -234,6 +289,7 @@ mod tests {
             encoder: "x264",
             capture_backend: "Wayland",
             shutdown_tx,
+            displays: None,
         })
     }
 

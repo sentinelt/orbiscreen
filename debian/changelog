@@ -1,3 +1,14 @@
+orbiscreen (0.30.6-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.30.6 for Ubuntu noble.
+  * Eliminate 125% scaling latency and frame backlog with 4-thread nearest-neighbor videoscale.
+  * Fix resolution configuration ignored on client connection by prioritizing host geometry.
+  * Dynamically apply resolution changes to active display sessions via D-Bus.
+  * Restore Direct Touch mode by removing relative mouse movements from uinput touch injector.
+  * Clean up and deduplicate Android input networking configuration.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Sat, 19 Sep 2026 12:25:00 +0300
+
 orbiscreen (0.30.5-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.30.5 for Ubuntu noble.

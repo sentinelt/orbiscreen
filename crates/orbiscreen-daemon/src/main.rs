@@ -810,6 +810,18 @@ async fn run_display(config_path: &Path, action: Option<DisplayAction>) -> ExitC
                         cfg.display.refresh_rate_hz,
                         config_path.display()
                     );
+                    if let Ok(conn) = zbus::Connection::session().await {
+                        if let Ok(msg) = dbus::call_set_resolution(
+                            &conn,
+                            cfg.display.width,
+                            cfg.display.height,
+                            cfg.display.refresh_rate_hz,
+                        )
+                        .await
+                        {
+                            println!("{} {msg}", ui::badge_ok());
+                        }
+                    }
                     ExitCode::SUCCESS
                 }
                 Err(e) => {
@@ -1252,6 +1264,7 @@ async fn run_start_per_client(
         encoder: "auto",
         capture_backend: "kwin-virtual",
         shutdown_tx,
+        displays: Some(displays.clone()),
     });
     tokio::spawn(async move {
         if let Err(e) = dbus::run_dbus_server(dbus_handles).await {
@@ -2832,6 +2845,7 @@ async fn run_start(
         encoder: encoder_name,
         capture_backend: backend_name,
         shutdown_tx,
+        displays: None,
     });
     tokio::spawn(async move {
         if let Err(e) = dbus::run_dbus_server(dbus_handles).await {

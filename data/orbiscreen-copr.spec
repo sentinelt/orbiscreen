@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.30.5
+Version:        0.30.6
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +143,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.6-1
+- Release 0.30.6: Eliminate 125% scaling latency and frame backlog with 4-thread nearest-neighbor videoscale; prioritize host display resolution configuration over client native screen on connect; dynamically update resolution and resize active sessions via D-Bus; restore Direct Touch mode by removing relative mouse movements from uinput touch injector; clean up Android input network dispatch.
+
 * Thu Sep 18 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.5-1
 - Release 0.30.5: Eliminate permanent display freeze by never discarding buffers to keyframe in ExoPlayer; fix non-monotonic backward jumps in PTS timestamps during frame bursts; cut input latency by tuning ExoPlayer buffer durations to 30ms and locking playback speed to 1.0f; relax drop threshold to 150ms to prevent micro frame drops at 90Hz.
 

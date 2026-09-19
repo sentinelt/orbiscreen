@@ -59,10 +59,14 @@ pub enum DisplayCommand {
         id: Option<String>,
         event: IncomingInput,
     },
+    SetDefaults {
+        width: u32,
+        height: u32,
+        refresh_hz: u32,
+    },
 }
 
-#[derive(Clone)]
-#[allow(missing_debug_implementations)]
+#[derive(Clone, Debug)]
 pub struct DisplayCtl {
     tx: mpsc::Sender<DisplayCommand>,
 }
@@ -74,6 +78,17 @@ impl DisplayCtl {
 
     pub fn sender(&self) -> mpsc::Sender<DisplayCommand> {
         self.tx.clone()
+    }
+
+    pub async fn set_defaults(&self, width: u32, height: u32, refresh_hz: u32) {
+        let _ = self
+            .tx
+            .send(DisplayCommand::SetDefaults {
+                width,
+                height,
+                refresh_hz,
+            })
+            .await;
     }
 
     pub async fn acquire(

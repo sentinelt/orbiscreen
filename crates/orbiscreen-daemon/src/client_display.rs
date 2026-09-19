@@ -44,7 +44,7 @@ pub fn spawn_hub(cfg: HubConfig) -> DisplayCtl {
     DisplayCtl::new(tx)
 }
 
-async fn run_hub(cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
+async fn run_hub(mut cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
     let mut sessions: HashMap<String, Session> = HashMap::new();
     let mut idle_at: HashMap<String, tokio::time::Instant> = HashMap::new();
     let mut idle_tick = tokio::time::interval(Duration::from_millis(250));
@@ -53,7 +53,7 @@ async fn run_hub(cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
         tokio::select! {
             cmd = rx.recv() => {
                 let Some(cmd) = cmd else { break };
-                handle_cmd(&cfg, &mut sessions, &mut idle_at, cmd).await;
+                handle_cmd(&mut cfg, &mut sessions, &mut idle_at, cmd).await;
             }
             _ = idle_tick.tick() => {
                 let now = tokio::time::Instant::now();
@@ -88,12 +88,21 @@ async fn run_hub(cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
 }
 
 async fn handle_cmd(
-    cfg: &HubConfig,
+    cfg: &mut HubConfig,
     sessions: &mut HashMap<String, Session>,
     idle_at: &mut HashMap<String, tokio::time::Instant>,
     cmd: DisplayCommand,
 ) {
     match cmd {
+        DisplayCommand::SetDefaults {
+            width,
+            height,
+            refresh_hz,
+        } => {
+            cfg.default_width = width;
+            cfg.default_height = height;
+            cfg.refresh_hz = refresh_hz;
+        }
         DisplayCommand::Acquire {
             name,
             key,
@@ -102,18 +111,31 @@ async fn handle_cmd(
             bitrate_kbps,
             reply,
         } => {
+            let (target_w, target_h) = if cfg.default_width > 0 && cfg.default_height > 0 {
+                (cfg.default_width, cfg.default_height)
+            } else {
+                (width, height)
+            };
             if let Some(ref k) = key {
                 if let Some((existing_id, existing_session)) = sessions
                     .iter_mut()
                     .find(|(_, s)| s.client_key.as_ref() == Some(k))
                 {
-                    idle_at.insert(existing_id.clone(), tokio::time::Instant::now());
-                    let info = existing_session.info.clone();
-                    let _ = reply.send(Ok(info));
-                    return;
+                    if existing_session.info.width == target_w
+                        && existing_session.info.height == target_h
+                    {
+                        idle_at.insert(existing_id.clone(), tokio::time::Instant::now());
+                        let info = existing_session.info.clone();
+                        let _ = reply.send(Ok(info));
+                        return;
+                    }
+                    let id_to_remove = existing_id.clone();
+                    if let Some(old) = sessions.remove(&id_to_remove) {
+                        close_session_inner(old);
+                    }
                 }
             }
-            let result = open_session(cfg, name, key, width, height, bitrate_kbps).await;
+            let result = open_session(cfg, name, key, target_w, target_h, bitrate_kbps).await;
             if let Ok(session) = result {
                 let info = session.info.clone();
                 idle_at.insert(info.id.clone(), tokio::time::Instant::now());
