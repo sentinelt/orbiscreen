@@ -169,8 +169,8 @@ async fn handle_cmd(
             idle_at.remove(&id);
             close_session(sessions, &id);
         }
-        DisplayCommand::Attach { id, reply } => {
-            let chosen = resolve_id(sessions, id.as_deref());
+        DisplayCommand::Attach { id, key, reply } => {
+            let chosen = resolve_attach_session_id(sessions, id.as_deref(), key.as_deref());
             let sid = match chosen {
                 Some(sid) => sid,
                 None if (id.is_none() || id.as_deref() == Some("")) && sessions.is_empty() => {
@@ -239,6 +239,11 @@ async fn handle_cmd(
                 for session in sessions.values() {
                     let _ = session.idr_tx.try_send(());
                 }
+            } else if let Some(session) = sessions
+                .values()
+                .find(|s| s.client_key.as_deref() == Some(&id))
+            {
+                let _ = session.idr_tx.try_send(());
             }
         }
         DisplayCommand::Resize {
@@ -314,7 +319,63 @@ async fn handle_cmd(
     }
 }
 
+fn resolve_attach_session_id(
+    sessions: &HashMap<String, Session>,
+    id: Option<&str>,
+    key: Option<&str>,
+) -> Option<String> {
+    if let Some(req_id) = id.filter(|s| !s.is_empty()) {
+        if sessions.contains_key(req_id) {
+            return Some(req_id.to_string());
+        }
+        if let Some(s) = sessions
+            .values()
+            .find(|s| s.client_key.as_deref() == Some(req_id))
+        {
+            return Some(s.info.id.clone());
+        }
+        return None;
+    }
+    if let Some(req_key) = key.filter(|s| !s.is_empty()) {
+        if let Some(s) = sessions
+            .values()
+            .find(|s| s.client_key.as_deref() == Some(req_key))
+        {
+            return Some(s.info.id.clone());
+        }
+    }
+    if sessions.len() == 1 {
+        return Some(sessions.keys().next().unwrap().clone());
+    }
+    if sessions.is_empty() {
+        return None;
+    }
+    let unattached: Vec<&Session> = sessions.values().filter(|s| s.viewers == 0).collect();
+    if !unattached.is_empty() {
+        return unattached
+            .into_iter()
+            .max_by_key(|s| u64::from_str_radix(&s.info.id, 16).unwrap_or(0))
+            .map(|s| s.info.id.clone());
+    }
+    sessions
+        .values()
+        .max_by_key(|s| u64::from_str_radix(&s.info.id, 16).unwrap_or(0))
+        .map(|s| s.info.id.clone())
+}
+
 fn resolve_id(sessions: &HashMap<String, Session>, id: Option<&str>) -> Option<String> {
+    if let Some(req) = id.filter(|s| !s.is_empty()) {
+        if sessions.contains_key(req) {
+            return Some(req.to_string());
+        }
+        if let Some(s) = sessions
+            .values()
+            .find(|s| s.client_key.as_deref() == Some(req))
+        {
+            return Some(s.info.id.clone());
+        }
+        return None;
+    }
     resolve_session_id(sessions.keys().map(String::as_str), id)
 }
 
@@ -857,6 +918,46 @@ mod tests {
         assert_eq!(
             resolve_session_id(two, Some("android")).as_deref(),
             Some("android")
+        );
+    }
+
+    #[test]
+    fn resolve_attach_session_id_prefers_key_unattached_and_newest() {
+        use super::resolve_attach_session_id;
+        let mut sessions = HashMap::new();
+        let mut s1 = session_with("1", true);
+        s1.client_key = Some("device-a".into());
+        s1.viewers = 1;
+        sessions.insert("1".into(), s1);
+
+        let mut s2 = session_with("2", false);
+        s2.client_key = Some("device-b".into());
+        s2.viewers = 0;
+        sessions.insert("2".into(), s2);
+
+        assert_eq!(
+            resolve_attach_session_id(&sessions, Some("1"), None).as_deref(),
+            Some("1")
+        );
+        assert_eq!(
+            resolve_attach_session_id(&sessions, None, Some("device-a")).as_deref(),
+            Some("1")
+        );
+        assert_eq!(
+            resolve_attach_session_id(&sessions, None, Some("device-b")).as_deref(),
+            Some("2")
+        );
+        assert_eq!(
+            resolve_attach_session_id(&sessions, None, None).as_deref(),
+            Some("2")
+        );
+
+        if let Some(s) = sessions.get_mut("2") {
+            s.viewers = 1;
+        }
+        assert_eq!(
+            resolve_attach_session_id(&sessions, None, None).as_deref(),
+            Some("2")
         );
     }
 

@@ -4,6 +4,7 @@
   "version": "0.30.6",
   "version": "0.30.7",
   "version": "0.30.8",
+  "version": "0.30.9",
   "identifier": "orbiscreen-gui",
   "build": {
     "frontendDist": "./ui"

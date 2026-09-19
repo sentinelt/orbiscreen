@@ -998,7 +998,7 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                     "UDP client joined"
                 );
                 if let Some(ctl) = ctx.displays {
-                    match ctl.attach(session.clone()).await {
+                    match ctl.attach(session.clone(), None).await {
                         Ok(att) => {
                             client.session = Some(att.info.id.clone());
                             let fwd = UdpForward {

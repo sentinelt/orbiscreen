@@ -37,6 +37,7 @@ pub enum DisplayCommand {
     },
     Attach {
         id: Option<String>,
+        key: Option<String>,
         reply: oneshot::Sender<Result<AttachedDisplay, String>>,
     },
     Detach {
@@ -135,10 +136,14 @@ impl DisplayCtl {
             .await;
     }
 
-    pub async fn attach(&self, id: Option<String>) -> Result<AttachedDisplay, String> {
+    pub async fn attach(
+        &self,
+        id: Option<String>,
+        key: Option<String>,
+    ) -> Result<AttachedDisplay, String> {
         let (reply, rx) = oneshot::channel();
         self.tx
-            .send(DisplayCommand::Attach { id, reply })
+            .send(DisplayCommand::Attach { id, key, reply })
             .await
             .map_err(|_| "display hub stopped".to_string())?;
         rx.await.map_err(|_| "display hub stopped".to_string())?

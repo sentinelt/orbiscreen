@@ -1385,8 +1385,9 @@ async fn annexb_byte_stream(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
     let session_q = query_value(request.uri().query(), "session").map(str::to_string);
+    let key_q = query_value(request.uri().query(), "key").map(str::to_string);
     let attached = if let Some(ctl) = &state.displays {
-        match ctl.attach(session_q.clone()).await {
+        match ctl.attach(session_q.clone(), key_q).await {
             Ok(att) => Some(att),
             Err(e) => {
                 warn!("au attach failed: {e}");
@@ -1503,6 +1504,7 @@ async fn stream_head_handler() -> impl IntoResponse {
 #[derive(serde::Deserialize, Debug, Default)]
 struct StreamQuery {
     session: Option<String>,
+    key: Option<String>,
 }
 
 fn build_video_pipeline() -> Result<
@@ -1613,19 +1615,14 @@ async fn stream_handler(
         }
     };
 
-    let (p, src, sink) = match build_video_pipeline() {
-        Ok(res) => res,
-        Err(_) => {
-            warn!("failed to build video pipeline");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    struct PipelineGuard(Option<gstreamer::Pipeline>);
+    impl Drop for PipelineGuard {
+        fn drop(&mut self) {
+            if let Some(p) = self.0.take() {
+                let _ = p.set_state(gstreamer::State::Null);
+            }
         }
-    };
-    setup_pipeline(&p, &src, &sink, tx.clone());
-    if let Err(e) = p.set_state(gstreamer::State::Playing) {
-        warn!("stream pipeline failed to reach playing state: {e}");
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    let (pipeline, appsrc, _appsink) = (p, src, sink);
 
     let session_q = query.session.clone().or_else(|| {
         headers
@@ -1633,8 +1630,14 @@ async fn stream_handler(
             .and_then(|v| v.to_str().ok())
             .map(str::to_string)
     });
+    let key_q = query.key.clone().or_else(|| {
+        headers
+            .get("x-orbiscreen-client-key")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    });
     let attached = if let Some(ctl) = &state.displays {
-        match ctl.attach(session_q.clone()).await {
+        match ctl.attach(session_q.clone(), key_q).await {
             Ok(att) => Some(att),
             Err(e) => {
                 warn!("stream attach failed: {e}");
@@ -1646,6 +1649,21 @@ async fn stream_handler(
     };
     let session_id = attached.as_ref().map(|a| a.info.id.clone());
 
+    let (p, src, sink) = match build_video_pipeline() {
+        Ok(res) => res,
+        Err(_) => {
+            warn!("failed to build video pipeline");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let mut pipeline_guard = PipelineGuard(Some(p.clone()));
+    setup_pipeline(&p, &src, &sink, tx.clone());
+    if let Err(e) = p.set_state(gstreamer::State::Playing) {
+        warn!("stream pipeline failed to reach playing state: {e}");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    let (_pipeline, appsrc, _appsink) = (p, src, sink);
+
     state.stats.client_started();
     let appsrc_clone = appsrc.clone();
     let stats = state.stats.clone();
@@ -1653,14 +1671,7 @@ async fn stream_handler(
     let displays = state.displays.clone();
     let lag_ctl = displays.clone();
     let lag_session = session_id.clone();
-
-    struct PipelineGuard(gstreamer::Pipeline);
-    impl Drop for PipelineGuard {
-        fn drop(&mut self) {
-            let _ = self.0.set_state(gstreamer::State::Null);
-        }
-    }
-    let pipeline_for_task = pipeline.clone();
+    let pipeline_for_task = pipeline_guard.0.take().unwrap();
 
     let refresh_hz = state.refresh_hz.max(1);
     let nominal_frame_ns = 1_000_000_000u64 / u64::from(refresh_hz);
@@ -1672,7 +1683,7 @@ async fn stream_handler(
     let mut client_shutdown_rx = state.client_shutdown_tx.subscribe();
 
     tokio::spawn(async move {
-        let _pipeline_guard = PipelineGuard(pipeline_for_task);
+        let mut _pipeline_guard = PipelineGuard(Some(pipeline_for_task));
         let _guard = ClientGuard(stats);
         struct DetachGuard(Option<(DisplayCtl, String)>);
         impl Drop for DetachGuard {
@@ -1772,7 +1783,9 @@ async fn stream_handler(
                 }
             }
         }
-        let _ = pipeline.set_state(gstreamer::State::Null);
+        if let Some(p) = _pipeline_guard.0.take() {
+            let _ = p.set_state(gstreamer::State::Null);
+        }
     });
 
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx)

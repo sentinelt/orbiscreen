@@ -12,6 +12,7 @@ object StreamUrl {
         port: Int,
         token: String = "",
         session: String? = null,
+        key: String? = null,
     ): Uri {
         var cleanHost = host.trim()
         if (cleanHost.startsWith("http://", ignoreCase = true)) {
@@ -37,6 +38,9 @@ object StreamUrl {
         }
         if (!session.isNullOrBlank()) {
             httpUrlBuilder.addQueryParameter("session", session)
+        }
+        if (!key.isNullOrBlank()) {
+            httpUrlBuilder.addQueryParameter("key", key)
         }
 
         return Uri.parse(httpUrlBuilder.build().toString())

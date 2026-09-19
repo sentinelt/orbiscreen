@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.9] - 2026-09-19
+
+Prevent GStreamer segmentation fault and GLib aggregator assertions upon USB disconnection or protocol error, enforce strict RAII `PipelineGuard` with synchronous `State::Null` teardown, isolate display session acquisition before constructing video pipelines, implement intelligent multi-client session routing in the daemon via client keys and unattached session tracking, and preserve active sessions in the Android client across transient reconnections.
+
+### 🛡️ Stability & Lifecycle Hardening
+- **Eliminate GStreamer Segfaults on USB Disconnect (`crates/orbiscreen-transport/src/lib.rs`)**:
+  - Encapsulated GStreamer pipelines in a RAII `PipelineGuard` ensuring that pipeline elements (`appsrc`, `h264parse`, `mpegtsmux`, `appsink`) are unconditionally and synchronously transitioned to `gstreamer::State::Null` upon dropping.
+  - Eliminated GLib aggregator assertions (`assertion 'GST_IS_PAD (pad)' failed`, `gst_aggregator_get_latency_unlocked`) and core dumps when USB connections drop (`Protocol error (os error 71)`) or sockets close.
+  - Reordered stream initialization: `ctl.attach` is performed strictly **before** constructing the video pipeline. If session attachment fails, the request returns `503 Service Unavailable` immediately without allocating any orphan GStreamer pipeline elements.
+  - Ensured that streaming tasks synchronously nullify the pipeline on completion or disconnect before releasing memory.
+
+### 🖥️ Multi-Display & Multi-Client Session Routing
+- **Smart Session Correlation (`crates/orbiscreen-daemon/src/client_display.rs`, `display.rs`)**:
+  - Added `resolve_attach_session_id` to correlate stream requests to the appropriate display session by matching client identity key (`client_key`), session ID, or unattached sessions (`viewers == 0`).
+  - Added support for rapid reconnects by falling back to the newest active session rather than rejecting ambiguous requests when multiple displays exist.
+  - Added `key` parameter to `DisplayCommand::Attach` and `DisplayCtl::attach` across transport handlers (`HTTP`, `WebSocket`, `UDP`, `WebTransport`).
+  - Updated `DisplayCommand::Idr` to route keyframe requests matching client keys.
+  - Added comprehensive unit tests for session resolution (`resolve_attach_session_id_prefers_key_unattached_and_newest`).
+
+### 📱 Android Client Resilience
+- **Session Preservation & Explicit Headers (`PlayerHolder.kt`, `StreamUrl.kt`)**:
+  - Passed `X-Orbiscreen-Session` and `X-Orbiscreen-Client-Key` in ExoPlayer's `OkHttpDataSource.Factory` request headers.
+  - Added `key` query parameter support in `StreamUrl.build()`.
+  - Updated `scheduleReconnect` and `retry` to preserve and reuse the known active `session` across transient reconnect attempts, preventing unnecessary duplicate session allocations on transient network drops.
+  - Only triggers full session re-acquisition (`reopenDisplaySession`) when the host daemon explicitly returns HTTP 404/503.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.9`.
+- Incremented Android client `versionCode` to `114` and updated `versionName` to `"0.30.9"`.
+- Updated `tauri.conf.json` version to `0.30.9`.
+- Bumped PKGBUILD `pkgver` to `0.30.9`.
+- Added `0.30.9-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.8] - 2026-09-19
 
 Overhaul direct touch and window dragging with `BTN_LEFT` uinput synchronization, implement graceful UDP `TYPE_BYE` disconnect upon daemon `Ctrl+C` with active Android health watchdog, eliminate secondary tablet freezing by decoupling per-client resolution and routing IDR requests, harden AOA USB bridges against poisoned mutex panics, and purge internal code comments across all source files.

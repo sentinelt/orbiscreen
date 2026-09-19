@@ -420,7 +420,7 @@ async fn stream_session(
         } else {
             Some(session.to_string())
         };
-        match ctl.attach(id).await {
+        match ctl.attach(id, None).await {
             Ok(att) => Some(att),
             Err(e) => {
                 warn!("webtransport attach failed: {e}");
@@ -781,7 +781,7 @@ mod tests {
             .unwrap()
             .unwrap();
         match command {
-            crate::DisplayCommand::Attach { id, reply } => {
+            crate::DisplayCommand::Attach { id, key: _, reply } => {
                 assert_eq!(id.as_deref(), Some("owned-session"));
                 assert!(reply
                     .send(Ok(crate::AttachedDisplay {

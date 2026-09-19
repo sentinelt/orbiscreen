@@ -1,3 +1,14 @@
+orbiscreen (0.30.9-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.30.9 for Ubuntu noble.
+  * Prevent GStreamer segmentation fault and CRITICAL disposal warnings on USB disconnect.
+  * Wrap GStreamer video pipeline in RAII PipelineGuard ensuring synchronous State::Null teardown.
+  * Perform display session attach before constructing video pipeline to avoid orphan pipelines on attach failure.
+  * Implement smart multi-client session routing correlating client key and unattached sessions.
+  * Pass X-Orbiscreen-Session and client key in ExoPlayer headers while preserving session across transient reconnects.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Sat, 19 Sep 2026 22:50:00 +0300
+
 orbiscreen (0.30.8-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.30.8 for Ubuntu noble.

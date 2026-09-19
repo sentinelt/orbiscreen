@@ -92,6 +92,9 @@ class PlayerHolder(
     private val lastIdrAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     private var bufferingWatchdogJob: Job? = null
 
+    @Volatile
+    private var isBackgrounded: Boolean = false
+
     fun requestIdr() {
         val target = lastTarget ?: return
         val now = android.os.SystemClock.elapsedRealtime()
@@ -163,11 +166,17 @@ class PlayerHolder(
         } catch (_: Exception) {
             ""
         }
+        val identityKey = try {
+            com.orbiscreen.android.net.ClientIdentity.from(context).key
+        } catch (_: Exception) {
+            null
+        }
         val uri = StreamUrl.build(
             host,
             port,
             token,
             session = session?.id,
+            key = identityKey,
         )
         android.util.Log.i("OrbiPlayer", "connecting to stream: $uri")
         _event.value = StreamEvent.Connecting(uri)
@@ -196,11 +205,20 @@ class PlayerHolder(
         }
 
         val player = try {
+            val headers = mutableMapOf<String, String>()
+            if (token.isNotBlank()) {
+                headers["Authorization"] = "Bearer $token"
+            }
+            val sid = session?.id.orEmpty()
+            if (sid.isNotBlank()) {
+                headers["X-Orbiscreen-Session"] = sid
+            }
+            if (!identityKey.isNullOrBlank()) {
+                headers["X-Orbiscreen-Client-Key"] = identityKey
+            }
             val httpFactory = OkHttpDataSource.Factory(okHttp)
                 .setUserAgent("Orbiscreen-Android/${com.orbiscreen.android.BuildConfig.VERSION_NAME}")
-                .setDefaultRequestProperties(
-                    if (token.isNotBlank()) mapOf("Authorization" to "Bearer $token") else emptyMap()
-                )
+                .setDefaultRequestProperties(headers)
             val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
                 .setTransferListener(object : androidx.media3.datasource.TransferListener {
                     override fun onTransferInitializing(
@@ -360,7 +378,8 @@ class PlayerHolder(
             }
             retryCount++
             _event.value = StreamEvent.Error(code, "$message (reconnecting $retryCount/$maxRetries)")
-            scheduleReconnect()
+            val forceRefresh = code == 404 || code == 503 || message.contains("404") || message.contains("503")
+            scheduleReconnect(forceRefresh)
         }
     }
 
@@ -432,13 +451,17 @@ class PlayerHolder(
             .setMediaCodecSelector(selector)
     }
 
-    private fun scheduleReconnect() {
+    private fun scheduleReconnect(forceRefresh: Boolean = false) {
         val target = lastTarget ?: return
         if (reconnectJob?.isActive == true) return
         reconnectJob = scope.launch {
             delay(reconnectDelayMs)
             reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(10_000L)
-            val session = refreshedSession() ?: target.session
+            val session = if (forceRefresh || target.session == null) {
+                refreshedSession() ?: target.session
+            } else {
+                target.session
+            }
             buildInternal(
                 target.host,
                 target.port,
@@ -469,9 +492,6 @@ class PlayerHolder(
         _event.value = StreamEvent.Idle
     }
 
-    @Volatile
-    private var isBackgrounded: Boolean = false
-
     fun onAppBackgrounded() {
         isBackgrounded = true
         _player.value?.playWhenReady = false
@@ -481,8 +501,6 @@ class PlayerHolder(
         val wasBackgrounded = isBackgrounded
         isBackgrounded = false
         if (!wasBackgrounded) return
-        
-        
         if (_udp.value != null) return
         val p = _player.value
         if (p != null && p.playbackState != Player.STATE_IDLE && p.playerError == null) {
@@ -496,7 +514,7 @@ class PlayerHolder(
 
     fun retry(host: String, port: Int, tokenProvider: suspend () -> String = { "" }) {
         scope.launch {
-            val session = refreshedSession() ?: lastTarget?.session
+            val session = lastTarget?.session ?: refreshedSession()
             build(host, port, session, tokenProvider)
         }
     }
@@ -560,14 +578,10 @@ private class LowLatencyVideoRenderer(
         if (earlyUs < -300_000) {
             onLagDetected()
         }
-        // Always return false: Android MediaCodec output buffers rarely preserve BUFFER_FLAG_KEY_FRAME.
-        // Returning true triggers an irreversible ExoPlayer state where all decoded frames are discarded indefinitely.
         return false
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        // Drop only when severely delayed (>150ms). ExoPlayer's default 30ms threshold is overly
-        // aggressive for 90Hz 2560x1600 rendering and causes noticeable mouse cursor frame skipping.
         return earlyUs < -150_000L && !isLastBuffer
     }
 }
