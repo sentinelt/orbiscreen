@@ -498,7 +498,7 @@ pub fn run_accessory_bridge(
                             let (tcp_tx, tcp_rx) = std::sync::mpsc::channel::<Vec<u8>>();
                             let is_video = Arc::new(AtomicBool::new(false));
                             if let Ok(stream_for_map) = tcp_stream.try_clone() {
-                                let mut map = tcp_streams.lock().unwrap();
+                                let mut map = tcp_streams.lock().unwrap_or_else(|p| p.into_inner());
                                 map.insert(stream_id, (tcp_tx, stream_for_map, is_video.clone()));
                             }
 
@@ -547,7 +547,7 @@ pub fn run_accessory_bridge(
                                 close_frame.push(FRAME_FLAG_CLOSE);
                                 close_frame.extend_from_slice(&0u16.to_be_bytes());
                                 let _ = prio_tx_clone.send(close_frame);
-                                let mut map = tcp_streams_reader.lock().unwrap();
+                                let mut map = tcp_streams_reader.lock().unwrap_or_else(|p| p.into_inner());
                                 map.remove(&stream_id);
                             });
 
@@ -578,7 +578,7 @@ pub fn run_accessory_bridge(
                         }
                     }
                 } else if (flags & FRAME_FLAG_DATA) != 0 {
-                    let map = tcp_streams.lock().unwrap();
+                    let map = tcp_streams.lock().unwrap_or_else(|p| p.into_inner());
                     if let Some((tx, _, is_video)) = map.get(&stream_id) {
                         if payload.windows(7).any(|w| w == b"/stream") {
                             is_video.store(true, Ordering::Relaxed);
@@ -586,7 +586,7 @@ pub fn run_accessory_bridge(
                         let _ = tx.send(payload);
                     }
                 } else if (flags & FRAME_FLAG_CLOSE) != 0 {
-                    let mut map = tcp_streams.lock().unwrap();
+                    let mut map = tcp_streams.lock().unwrap_or_else(|p| p.into_inner());
                     if let Some((_, stream, _)) = map.remove(&stream_id) {
                         let _ = stream.shutdown(std::net::Shutdown::Both);
                     }
@@ -602,7 +602,7 @@ pub fn run_accessory_bridge(
 
     running.store(false, Ordering::Relaxed);
     {
-        let mut map = tcp_streams.lock().unwrap();
+        let mut map = tcp_streams.lock().unwrap_or_else(|p| p.into_inner());
         for (_, (_, stream, _)) in map.drain() {
             let _ = stream.shutdown(std::net::Shutdown::Both);
         }

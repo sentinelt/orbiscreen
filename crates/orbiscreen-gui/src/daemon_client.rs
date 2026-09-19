@@ -63,7 +63,7 @@ impl DaemonClient {
             let conn = zbus::Connection::session().await?;
             let proxy = zbus::Proxy::new(
                 &conn,
-                "org.shadow-x78.Orbiscreen",
+                "com.orbiscreen.Daemon",
                 "/com/orbiscreen/Daemon",
                 "com.orbiscreen.Daemon",
             )
@@ -132,7 +132,7 @@ impl DaemonClient {
         if let Ok(conn) = zbus::Connection::session().await {
             if let Ok(proxy) = zbus::Proxy::new(
                 &conn,
-                "org.shadow-x78.Orbiscreen",
+                "com.orbiscreen.Daemon",
                 "/com/orbiscreen/Daemon",
                 "com.orbiscreen.Daemon",
             )
@@ -223,7 +223,7 @@ impl DaemonClient {
         if let Ok(conn) = zbus::Connection::session().await {
             if let Ok(proxy) = zbus::Proxy::new(
                 &conn,
-                "org.shadow-x78.Orbiscreen",
+                "com.orbiscreen.Daemon",
                 "/com/orbiscreen/Daemon",
                 "com.orbiscreen.Daemon",
             )

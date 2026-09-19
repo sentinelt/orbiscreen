@@ -1,3 +1,14 @@
+orbiscreen (0.30.8-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.30.8 for Ubuntu noble.
+  * Overhaul direct touch and mouse dragging with BTN_LEFT synchronization on uinput touchscreen device.
+  * Emit UDP BYE datagrams on daemon Ctrl+C shutdown and add active health watchdog in Android client.
+  * Resolve secondary tablet display freeze by decoupling per-client resolution and routing IDR requests.
+  * Protect AOA USB bridges against poisoned mutex panics and eliminate WebTransport frame slice panics.
+  * Purge internal source comments while preserving credit headers and standardized boxed config comments.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Sat, 19 Sep 2026 20:10:00 +0300
+
 orbiscreen (0.30.7-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.30.7 for Ubuntu noble.

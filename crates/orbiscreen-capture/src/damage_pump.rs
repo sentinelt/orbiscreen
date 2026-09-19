@@ -100,42 +100,44 @@ fn run(
         .map_err(|e| format!("roundtrip: {e}"))?;
 
     let find_target = |state: &PumpState| -> Option<wl_output::WlOutput> {
-        let is_sec = target_output.as_deref().is_some_and(|t| t.contains('2'));
         if let Some(ref name_target) = target_output {
             let clean_target = name_target.trim().to_uppercase();
-            let exact = state
-                .output_names
-                .iter()
-                .find(|(_, name)| name.to_uppercase() == clean_target)
-                .map(|(proxy, _)| proxy.clone());
-            if exact.is_some() {
-                return exact;
-            }
-            let sub = state
-                .output_names
-                .iter()
-                .find(|(_, name)| {
+            if !clean_target.is_empty() && clean_target != DEFAULT_OUTPUT_HINT {
+                let target_slug = clean_target
+                    .strip_prefix("VIRTUAL-")
+                    .unwrap_or(&clean_target);
+
+                // 1. Exact match
+                if let Some((proxy, _)) = state
+                    .output_names
+                    .iter()
+                    .find(|(_, name)| name.to_uppercase() == clean_target)
+                {
+                    return Some(proxy.clone());
+                }
+
+                // 2. Normalized prefix match (e.g. Orbi-xxx vs Virtual-Orbi-xxx)
+                if let Some((proxy, _)) = state.output_names.iter().find(|(_, name)| {
                     let upper = name.to_uppercase();
-                    let upper_has_2 = upper.contains('2');
-                    if upper_has_2 != is_sec {
-                        return false;
-                    }
-                    upper.contains(&clean_target) || clean_target.contains(&upper)
-                })
-                .map(|(proxy, _)| proxy.clone());
-            if sub.is_some() {
-                return sub;
+                    let upper_slug = upper.strip_prefix("VIRTUAL-").unwrap_or(&upper);
+                    upper_slug == target_slug
+                }) {
+                    return Some(proxy.clone());
+                }
+
+                // Crucial: When a specific virtual output is requested, do NOT fall back
+                // to arbitrary virtual displays! Return None so the caller loop waits for
+                // KWin to announce this specific output.
+                return None;
             }
         }
+
+        // Generic fallback only when no specific target was requested
         state
             .output_names
             .iter()
             .find(|(_, name)| {
                 let upper = name.to_uppercase();
-                let upper_has_2 = upper.contains('2');
-                if upper_has_2 != is_sec {
-                    return false;
-                }
                 upper.contains(DEFAULT_OUTPUT_HINT) || upper.starts_with("VIRTUAL")
             })
             .map(|(proxy, _)| proxy.clone())

@@ -118,6 +118,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
 import com.orbiscreen.android.R
 import com.orbiscreen.android.player.StreamEvent
 import com.orbiscreen.android.ui.theme.GlassBorderDark
@@ -217,6 +218,17 @@ fun StreamScreen(
         }
     }
 
+    LaunchedEffect(state.event) {
+        if (state.event is StreamEvent.Disconnected) {
+            val reason = (state.event as StreamEvent.Disconnected).reason
+            if (reason.isNotBlank()) {
+                android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            delay(1200)
+            onBack()
+        }
+    }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -251,7 +263,7 @@ fun StreamScreen(
         )
 
         val udpLat = udp?.latencyMs?.collectAsState()?.value
-        if (player != null || udp != null) {
+        if ((player != null || udp != null) && state.event !is StreamEvent.Disconnected) {
             val input = remember { viewModel.ensureInput() }
             PlayerSurface(
                 player = player,

@@ -426,6 +426,9 @@ impl Transport {
             _ = tokio::signal::ctrl_c() => {}
         }
 
+        let _ = state.client_shutdown_tx.send(());
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
         if let Some(task) = usb_stats_task {
             task.abort();
         }
@@ -1131,6 +1134,7 @@ fn request_idr(state: &AppState, session: Option<&str>) {
 
 async fn api_control(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     match payload.get("action").and_then(|v| v.as_str()) {
@@ -1180,9 +1184,15 @@ async fn api_control(
             let session = payload
                 .get("session")
                 .and_then(|v| v.as_str())
-                .map(str::to_string);
+                .map(str::to_string)
+                .or_else(|| {
+                    headers
+                        .get("x-orbiscreen-session")
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::to_string)
+                });
             request_idr(&state, session.as_deref());
-            info!("host control: IDR requested");
+            info!(session = ?session, "host control: IDR requested");
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
         }
         Some("set_resolution") => {
@@ -1525,6 +1535,7 @@ fn build_video_pipeline() -> Result<
 
 async fn stream_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     axum::extract::Query(query): axum::extract::Query<StreamQuery>,
 ) -> axum::response::Response {
     use gstreamer::prelude::*;
@@ -1616,7 +1627,12 @@ async fn stream_handler(
     }
     let (pipeline, appsrc, _appsink) = (p, src, sink);
 
-    let session_q = query.session.clone();
+    let session_q = query.session.clone().or_else(|| {
+        headers
+            .get("x-orbiscreen-session")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    });
     let attached = if let Some(ctl) = &state.displays {
         match ctl.attach(session_q.clone()).await {
             Ok(att) => Some(att),
@@ -1697,7 +1713,11 @@ async fn stream_handler(
             }
             let pkt = tokio::select! {
                 _ = client_shutdown_rx.recv() => {
-                    debug!("stream client shutting down due to session lock");
+                    debug!("stream client shutting down due to session lock or daemon shutdown");
+                    break;
+                }
+                _ = tx_alive.closed() => {
+                    debug!("stream client connection closed");
                     break;
                 }
                 res = video_rx.recv() => match res {

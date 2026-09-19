@@ -908,6 +908,11 @@ pub async fn run_udp_hub(
             }
         }
     }
+    let map = clients.lock().await;
+    let bye = encode_bye(None);
+    for addr in map.keys() {
+        let _ = sock.send_to(&bye, addr).await;
+    }
 }
 
 #[allow(missing_debug_implementations)]

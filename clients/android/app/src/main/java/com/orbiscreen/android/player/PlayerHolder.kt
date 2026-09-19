@@ -90,6 +90,7 @@ class PlayerHolder(
     var refreshSession: (suspend () -> com.orbiscreen.android.net.HostApi.SessionInfo?)? = null
 
     private val lastIdrAtMs = java.util.concurrent.atomic.AtomicLong(0L)
+    private var bufferingWatchdogJob: Job? = null
 
     fun requestIdr() {
         val target = lastTarget ?: return
@@ -99,13 +100,20 @@ class PlayerHolder(
         scope.launch(Dispatchers.IO) {
             try {
                 val token = target.tokenProvider()
-                val body = """{"action":"idr"}""".toRequestBody("application/json".toMediaType())
-                val req = Request.Builder()
+                val sid = target.session?.id.orEmpty()
+                val body = if (sid.isNotBlank()) {
+                    """{"action":"idr","session":"$sid"}"""
+                } else {
+                    """{"action":"idr"}"""
+                }.toRequestBody("application/json".toMediaType())
+                val reqBuilder = Request.Builder()
                     .url("http://${target.host}:${target.port}/api/control")
                     .header("Authorization", "Bearer $token")
                     .post(body)
-                    .build()
-                okHttp.newCall(req).execute().close()
+                if (sid.isNotBlank()) {
+                    reqBuilder.header("X-Orbiscreen-Session", sid)
+                }
+                okHttp.newCall(reqBuilder.build()).execute().close()
             } catch (_: Exception) {}
         }
     }
@@ -273,19 +281,37 @@ class PlayerHolder(
                                 Player.STATE_BUFFERING -> {
                                     if (_event.value !is StreamEvent.Playing) {
                                         _event.value = StreamEvent.Buffering
+                                    } else {
+                                        bufferingWatchdogJob?.cancel()
+                                        bufferingWatchdogJob = scope.launch {
+                                            delay(2500)
+                                            if (isActive && !isBackgrounded) {
+                                                val target = lastTarget
+                                                if (target != null && !checkHostAlive(target.host, target.port)) {
+                                                    handleFailure(-1, "Host daemon disconnected")
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 Player.STATE_READY -> {
+                                    bufferingWatchdogJob?.cancel()
+                                    bufferingWatchdogJob = null
                                     reconnectDelayMs = 1_000L
                                     retryCount = 0
                                     _event.value = StreamEvent.Playing
                                 }
                                 Player.STATE_ENDED -> {
+                                    bufferingWatchdogJob?.cancel()
+                                    bufferingWatchdogJob = null
                                     if (!isBackgrounded) {
                                         handleFailure(-1, "Stream ended")
                                     }
                                 }
-                                Player.STATE_IDLE -> Unit
+                                Player.STATE_IDLE -> {
+                                    bufferingWatchdogJob?.cancel()
+                                    bufferingWatchdogJob = null
+                                }
                             }
                         }
                         override fun onPlayerError(error: PlaybackException) {
@@ -434,6 +460,8 @@ class PlayerHolder(
     }
 
     private fun releaseInternal() {
+        bufferingWatchdogJob?.cancel()
+        bufferingWatchdogJob = null
         _udp.value?.stop()
         _udp.value = null
         _player.value?.release()

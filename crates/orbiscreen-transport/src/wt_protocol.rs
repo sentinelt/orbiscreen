@@ -80,7 +80,7 @@ pub fn split_frame(buf: &[u8]) -> Result<Option<(&[u8], usize)>, CodecError> {
     if buf.len() < 4 {
         return Ok(None);
     }
-    let len = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+    let len = u32::from_be_bytes(buf[0..4].try_into().unwrap_or([0, 0, 0, 0])) as usize;
     if len > MAX_FRAME {
         return Err(CodecError::TooLarge(len));
     }
@@ -273,8 +273,8 @@ pub fn decode_message(body: &[u8]) -> Result<Message, CodecError> {
             }
             Ok(Message::Video(VideoFrame {
                 is_keyframe: rest[0] != 0,
-                pts_ns: u64::from_le_bytes(rest[1..9].try_into().unwrap()),
-                sent_ns: u64::from_le_bytes(rest[9..17].try_into().unwrap()),
+                pts_ns: u64::from_le_bytes(rest[1..9].try_into().unwrap_or([0; 8])),
+                sent_ns: u64::from_le_bytes(rest[9..17].try_into().unwrap_or([0; 8])),
                 au: rest[17..].to_vec(),
             }))
         }
@@ -284,8 +284,8 @@ pub fn decode_message(body: &[u8]) -> Result<Message, CodecError> {
                 return Err(CodecError::Truncated);
             }
             Ok(Message::Pong {
-                t0_ns: u64::from_le_bytes(rest[0..8].try_into().unwrap()),
-                host_ns: u64::from_le_bytes(rest[8..16].try_into().unwrap()),
+                t0_ns: u64::from_le_bytes(rest[0..8].try_into().unwrap_or([0; 8])),
+                host_ns: u64::from_le_bytes(rest[8..16].try_into().unwrap_or([0; 8])),
             })
         }
         TYPE_IDR => Ok(Message::Idr),

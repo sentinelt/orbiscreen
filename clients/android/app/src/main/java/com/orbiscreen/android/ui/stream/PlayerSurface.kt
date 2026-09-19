@@ -160,8 +160,8 @@ fun PlayerSurface(
             var lastTapX = 0f
             var lastTapY = 0f
             var isDragging = false
-            val doubleTapMaxMs = 300L
-            val doubleTapMaxDistPx = 80f
+            val doubleTapMaxMs = 450L
+            val doubleTapMaxDistPx = 140f
 
             val video = if (udp != null) {
                 UdpVideoLayout(ctx).apply {

@@ -119,8 +119,9 @@ class StreamViewModel(
     private suspend fun freshToken(forceRefresh: Boolean = false): String {
         if (isLan) return proxy?.localToken.orEmpty()
         return withContext(Dispatchers.IO) {
-            if (!forceRefresh && !sessionToken.isNullOrBlank()) {
-                return@withContext sessionToken!!
+            val current = sessionToken
+            if (!forceRefresh && !current.isNullOrBlank()) {
+                return@withContext current
             }
             for (attempt in 1..6) {
                 val t = hostApi.token(host, port)
@@ -177,6 +178,21 @@ class StreamViewModel(
             holders.flatMapLatest { it.event }.collect { ev ->
                 if (ev is StreamEvent.Playing && isLan) {
                     prefs.recentHost = com.orbiscreen.android.data.RecentHost(host = host, port = port)
+                }
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                delay(2000)
+                if (_state.value.event is StreamEvent.Playing && transportPort > 0) {
+                    val alive = checkHostAlive(transportHost, transportPort)
+                    if (!alive) {
+                        android.util.Log.w("StreamVM", "host unreachable while playing; triggering disconnect")
+                        playerHolder.release()
+                        _state.value = _state.value.copy(
+                            event = StreamEvent.Disconnected("Host daemon stopped or disconnected")
+                        )
+                    }
                 }
             }
         }
@@ -482,6 +498,23 @@ class StreamViewModel(
     fun ctrlAltDel() {
         ensureInput().control("ctrl_alt_del")
     }
+
+    private suspend fun checkHostAlive(targetHost: String, targetPort: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .readTimeout(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .build()
+                val req = okhttp3.Request.Builder()
+                    .url("http://$targetHost:$targetPort/health")
+                    .get()
+                    .build()
+                client.newCall(req).execute().use { it.isSuccessful }
+            } catch (_: Exception) {
+                false
+            }
+        }
 
     override fun onCleared() {
         disconnect()

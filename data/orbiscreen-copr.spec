@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.30.7
+Version:        0.30.8
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +144,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.8-1
+- Release 0.30.8: Overhaul direct touch and mouse dragging with BTN_LEFT synchronization on uinput touchscreen device; add graceful UDP BYE disconnect on daemon Ctrl+C shutdown with active Android health watchdog; fix second tablet freeze by decoupling per-client resolution and routing IDR keyframes; harden AOA USB bridges against poisoned mutex panics; purge internal codebase comments.
+
 * Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.7-1
 - Release 0.30.7: Eliminate display freezing and deadlock upon mouse entry by reverting multi-threaded nearest-neighbor videoscale; restore safe crisp bilinear videoscale capture; implement smart resolution negotiation auto-detecting client physical native display (2560x1536) by default while honoring explicit user overrides; add tablet-friendly scaling presets (2560x1536, 1920x1152, 1280x768) to GUI dashboard.
 

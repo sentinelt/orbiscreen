@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.8] - 2026-09-19
+
+Overhaul direct touch and window dragging with `BTN_LEFT` uinput synchronization, implement graceful UDP `TYPE_BYE` disconnect upon daemon `Ctrl+C` with active Android health watchdog, eliminate secondary tablet freezing by decoupling per-client resolution and routing IDR requests, harden AOA USB bridges against poisoned mutex panics, and purge internal code comments across all source files.
+
+### 🖱️ Input & Touch Control
+- **Direct Touch & Window Dragging Overhaul (`x11.rs`, `lib.rs`, `PlayerSurface.kt`)**:
+  - Registered `Key::BTN_LEFT` alongside `Key::BTN_TOUCH` on the virtual uinput touchscreen device.
+  - Emitted `BTN_LEFT` and `BTN_TOUCH` simultaneously on touch down and released both on touch up, enabling direct window titlebar dragging and standard UI button clicks on Linux desktops (KWin, Mutter, X11) without requiring touchpad cursor movement.
+  - Synchronized desktop pointer location with touch slot 0 coordinates.
+  - Expanded double-tap window dragging detection thresholds in Android client (`450ms` and `140px`) to properly support high-DPI tablets (e.g. 2560x1600).
+
+### ⚡ Stability & Lifecycle
+- **Graceful Disconnect on Ctrl+C & Daemon Exit (`udp_stream.rs`, `UdpPlayer.kt`, `StreamViewModel.kt`, `StreamScreen.kt`, `main.rs`, `display.rs`)**:
+  - Broadcasted UDP `TYPE_BYE` datagrams to all connected clients when the UDP hub shuts down, prompting immediate graceful disconnect.
+  - Implemented an active host health watchdog (`checkHostAlive`) in Android `StreamViewModel` pinging `/health` every 2 seconds during playback; triggers automatic clean return to the connection screen with a toast notification if the host daemon terminates.
+  - Cleanly teared down active KWin virtual displays via `displays.shutdown()`.
+- **Multi-Client & Multi-Tablet Reliability (`client_display.rs`, `lib.rs`, `aoa.rs`, `wt_protocol.rs`)**:
+  - Fixed resolution negotiation so secondary tablet devices can independently adopt their native dimensions without being constrained by prior sessions.
+  - Routed IDR keyframe requests to specific client sessions using `x-orbiscreen-session` or broadcast to all sessions when not specified.
+  - Protected USB AOA bridges from crashing the daemon on poisoned mutexes using `unwrap_or_else`.
+  - Prevented panics on frame slicing in WebTransport protocol.
+
+### 🧹 Codebase Standards & Cleanup
+- **Purge Internal Code Comments**:
+  - Removed all internal comments and dead commentary from `.rs` and `.kt` source files, preserving only the 2-line copyright/license headers.
+  - Standardized configuration file comments (`.env.example`, `data/99-orbiscreen-usb.rules`, `data/orbiscreen.service`, `rustfmt.toml`, `deny.toml`, `Cargo.toml`) in the requested boxed format (`# ────`).
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.30.8`.
+- Incremented Android client `versionCode` to `113` and updated `versionName` to `"0.30.8"`.
+- Updated `tauri.conf.json` version to `0.30.8`.
+- Bumped PKGBUILD `pkgver` to `0.30.8`.
+- Added `0.30.8-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.7] - 2026-09-19
 
 Eliminate virtual display freezing and thread-pool deadlocks upon mouse cursor entry by reverting multi-threaded nearest-neighbor videoscale, restore safe crisp bilinear capture scaling, implement smart resolution negotiation auto-detecting client physical native display (2560x1536) by default while honoring explicit user overrides, and add tablet-friendly scaling presets (2560x1536, 1920x1152, 1280x768) in GUI dashboard.

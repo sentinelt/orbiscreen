@@ -208,7 +208,14 @@ impl InputInjector {
 
     pub async fn inject_touch(&mut self, event: TouchEvent) -> Result<(), InputError> {
         if let InjectorInner::Uinput(injector) = &mut self.inner {
-            return injector.inject_touch(event);
+            let res = injector.inject_touch(event);
+            if event.slot == 0 {
+                let _ = injector.inject_pointer(PointerEvent::Move {
+                    x: event.x,
+                    y: event.y,
+                });
+            }
+            return res;
         }
         if event.slot != 0 {
             return Ok(());

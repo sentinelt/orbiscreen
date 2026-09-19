@@ -54,6 +54,14 @@ async fn run_hub(mut cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
         tokio::select! {
             cmd = rx.recv() => {
                 let Some(cmd) = cmd else { break };
+                if let DisplayCommand::Shutdown { reply } = cmd {
+                    let ids: Vec<String> = sessions.keys().cloned().collect();
+                    for id in ids {
+                        close_session(&mut sessions, &id);
+                    }
+                    let _ = reply.send(());
+                    break;
+                }
                 handle_cmd(&mut cfg, &mut sessions, &mut idle_at, cmd).await;
             }
             _ = idle_tick.tick() => {
@@ -93,12 +101,10 @@ pub(crate) fn target_resolution(
     client_width: u32,
     client_height: u32,
 ) -> (u32, u32) {
-    if cfg.has_explicit_override && cfg.default_width > 0 && cfg.default_height > 0 {
+    if cfg.default_width > 0 && cfg.default_height > 0 {
         (cfg.default_width, cfg.default_height)
     } else if client_width > 0 && client_height > 0 {
         (client_width, client_height)
-    } else if cfg.default_width > 0 && cfg.default_height > 0 {
-        (cfg.default_width, cfg.default_height)
     } else {
         (1920, 1080)
     }
@@ -228,6 +234,11 @@ async fn handle_cmd(
                 if let Some(session) = sessions.get(&sid) {
                     let _ = session.idr_tx.try_send(());
                 }
+            } else if id.is_empty() {
+                // If ID is not specified and multiple sessions exist, broadcast IDR to all sessions
+                for session in sessions.values() {
+                    let _ = session.idr_tx.try_send(());
+                }
             }
         }
         DisplayCommand::Resize {
@@ -296,6 +307,9 @@ async fn handle_cmd(
                     "dropping input; no unambiguous display session"
                 );
             }
+        }
+        DisplayCommand::Shutdown { reply } => {
+            let _ = reply.send(());
         }
     }
 }
@@ -871,32 +885,32 @@ mod tests {
     }
 
     #[test]
-    fn target_resolution_prioritizes_client_native_when_no_override() {
-        let cfg = super::HubConfig {
-            encode_kind: orbiscreen_encode::EncoderKind::Auto,
-            bitrate_kbps: 8000,
-            refresh_hz: 60,
-            default_width: 1920,
-            default_height: 1080,
-            has_explicit_override: false,
-        };
-        // Tablet reports 2560x1536: should be honored
-        assert_eq!(super::target_resolution(&cfg, 2560, 1536), (2560, 1536));
-        // Missing client size: fallback to cfg defaults
-        assert_eq!(super::target_resolution(&cfg, 0, 0), (1920, 1080));
-    }
-
-    #[test]
-    fn target_resolution_honors_explicit_user_override() {
+    fn target_resolution_prioritizes_configured_resolution() {
         let cfg = super::HubConfig {
             encode_kind: orbiscreen_encode::EncoderKind::Auto,
             bitrate_kbps: 8000,
             refresh_hz: 90,
             default_width: 1920,
             default_height: 1152,
-            has_explicit_override: true,
+            has_explicit_override: false,
         };
-        // User explicitly set 1920x1152 in CLI/GUI: tablet 2560x1536 must NOT override it
+        // Configured 1920x1152 in settings/CLI/GUI strictly takes precedence over tablet 2560x1536
         assert_eq!(super::target_resolution(&cfg, 2560, 1536), (1920, 1152));
+    }
+
+    #[test]
+    fn target_resolution_adopts_client_native_when_auto() {
+        let cfg = super::HubConfig {
+            encode_kind: orbiscreen_encode::EncoderKind::Auto,
+            bitrate_kbps: 8000,
+            refresh_hz: 60,
+            default_width: 0,
+            default_height: 0,
+            has_explicit_override: false,
+        };
+        // Auto (0x0): tablet 2560x1536 is adopted
+        assert_eq!(super::target_resolution(&cfg, 2560, 1536), (2560, 1536));
+        // Auto (0x0) with missing client size: fallback to 1080p
+        assert_eq!(super::target_resolution(&cfg, 0, 0), (1920, 1080));
     }
 }

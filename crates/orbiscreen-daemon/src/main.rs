@@ -1332,7 +1332,7 @@ async fn run_start_per_client(
         "auto",
         shutdown_rx.clone(),
         None,
-        Some(displays),
+        Some(displays.clone()),
     ));
 
     tokio::select! {
@@ -1352,6 +1352,8 @@ async fn run_start_per_client(
         }
     }
     let _ = shutdown_keepalive.send(true);
+    info!("Shutting down active client virtual displays...");
+    displays.shutdown().await;
     is_running.store(false, std::sync::atomic::Ordering::SeqCst);
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     Ok(())

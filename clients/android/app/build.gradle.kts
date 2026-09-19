@@ -21,6 +21,8 @@ android {
         versionName = "0.30.6"
         versionCode = 112
         versionName = "0.30.7"
+        versionCode = 113
+        versionName = "0.30.8"
     }
 
     signingConfigs {

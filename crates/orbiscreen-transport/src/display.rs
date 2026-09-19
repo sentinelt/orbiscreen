@@ -64,6 +64,9 @@ pub enum DisplayCommand {
         height: u32,
         refresh_hz: u32,
     },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -180,5 +183,12 @@ impl DisplayCtl {
 
     pub async fn input(&self, id: Option<String>, event: IncomingInput) {
         let _ = self.tx.send(DisplayCommand::Input { id, event }).await;
+    }
+
+    pub async fn shutdown(&self) {
+        let (reply, rx) = oneshot::channel();
+        if self.tx.send(DisplayCommand::Shutdown { reply }).await.is_ok() {
+            let _ = rx.await;
+        }
     }
 }

@@ -42,6 +42,7 @@ private const val TYPE_IDR: Byte = 6
 private const val TYPE_PROBE: Byte = 7
 private const val TYPE_PROBE_ACK: Byte = 8
 private const val TYPE_PMTU: Byte = 9
+private const val TYPE_BYE: Byte = 10
 private const val RECV_BUF: Int = 65_507
 
 enum class HandshakeAction { Ack, Control, Ignore }
@@ -284,6 +285,10 @@ class UdpPlayer(
                 
                 
                 requestIdr()
+            }
+            TYPE_BYE -> {
+                Log.i(TAG, "received BYE from host")
+                fail("Host closed session")
             }
             TYPE_HELLO_ACK -> {}
             else -> {}

@@ -3,6 +3,7 @@
   "productName": "Orbiscreen",
   "version": "0.30.6",
   "version": "0.30.7",
+  "version": "0.30.8",
   "identifier": "orbiscreen-gui",
   "build": {
     "frontendDist": "./ui"

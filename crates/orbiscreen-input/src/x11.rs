@@ -102,6 +102,7 @@ impl UinputInjector {
                 AbsSetup::new(Abs::MT_POSITION_Y, height_axis),
             ])?
             .with_keys([Key::BTN_TOUCH])?
+            .with_keys([Key::BTN_TOUCH, Key::BTN_LEFT])?
             .build(&ts_name)?;
 
         let res_w_axis = AbsInfo::new(0, spec.width.saturating_sub(1) as i32).with_resolution(10);
@@ -187,6 +188,7 @@ impl UinputInjector {
                 AbsSetup::new(Abs::MT_POSITION_Y, height_axis),
             ])?
             .with_keys([Key::BTN_TOUCH])?
+            .with_keys([Key::BTN_TOUCH, Key::BTN_LEFT])?
             .build(&self.ts_name)?)
     }
 
@@ -376,6 +378,10 @@ impl UinputInjector {
                 self.button_touch_down = true;
                 writer =
                     writer.write_events(&[KEv::new(Key::BTN_TOUCH, KeyState::PRESSED).into()])?;
+                writer = writer.write_events(&[
+                    KEv::new(Key::BTN_TOUCH, KeyState::PRESSED).into(),
+                    KEv::new(Key::BTN_LEFT, KeyState::PRESSED).into(),
+                ])?;
             }
         } else {
             if self.touch_slot_active[slot] {
@@ -390,6 +396,10 @@ impl UinputInjector {
                 self.button_touch_down = false;
                 writer =
                     writer.write_events(&[KEv::new(Key::BTN_TOUCH, KeyState::RELEASED).into()])?;
+                writer = writer.write_events(&[
+                    KEv::new(Key::BTN_TOUCH, KeyState::RELEASED).into(),
+                    KEv::new(Key::BTN_LEFT, KeyState::RELEASED).into(),
+                ])?;
             }
         }
 
