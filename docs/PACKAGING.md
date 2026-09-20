@@ -2,6 +2,10 @@
 
 # Multi-Distro Packaging Guide - Orbiscreen
 
+[![Version](https://img.shields.io/badge/version-0.30.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.8-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.9-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![Version](https://img.shields.io/badge/version-0.31.0-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.92%2B-16a34a?style=flat-square&logo=rust)
@@ -49,12 +53,6 @@ When cutting a release, the version must be updated across all packages:
 - `PKGBUILD`: `pkgver=0.30.8`
 - `debian/changelog`: new entry for `0.30.8-1`
 - `data/orbiscreen-copr.spec`: `Version: 0.30.8`
-- `Cargo.toml`: `[workspace.package].version = "0.30.9"`
-- `clients/android/app/build.gradle.kts`: `versionName = "0.30.9"`, `versionCode` incremented
-- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.9"`
-- `PKGBUILD`: `pkgver=0.30.9`
-- `debian/changelog`: new entry for `0.30.9-1`
-- `data/orbiscreen-copr.spec`: `Version: 0.30.9`
 - `Cargo.toml`: `[workspace.package].version = "0.31.0"`
 - `clients/android/app/build.gradle.kts`: `versionName = "0.31.0"`, `versionCode` incremented
 - `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.31.0"`

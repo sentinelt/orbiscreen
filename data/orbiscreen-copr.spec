@@ -8,7 +8,6 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.30.9
 Version:        0.31.0
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
