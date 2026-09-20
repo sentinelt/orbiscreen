@@ -235,7 +235,6 @@ async fn handle_cmd(
                     let _ = session.idr_tx.try_send(());
                 }
             } else if id.is_empty() {
-                // If ID is not specified and multiple sessions exist, broadcast IDR to all sessions
                 for session in sessions.values() {
                     let _ = session.idr_tx.try_send(());
                 }
@@ -345,7 +344,7 @@ fn resolve_attach_session_id(
         }
     }
     if sessions.len() == 1 {
-        return Some(sessions.keys().next().unwrap().clone());
+        return sessions.keys().next().cloned();
     }
     if sessions.is_empty() {
         return None;
@@ -995,7 +994,6 @@ mod tests {
             default_height: 1152,
             has_explicit_override: false,
         };
-        // Configured 1920x1152 in settings/CLI/GUI strictly takes precedence over tablet 2560x1536
         assert_eq!(super::target_resolution(&cfg, 2560, 1536), (1920, 1152));
     }
 
@@ -1009,9 +1007,7 @@ mod tests {
             default_height: 0,
             has_explicit_override: false,
         };
-        // Auto (0x0): tablet 2560x1536 is adopted
         assert_eq!(super::target_resolution(&cfg, 2560, 1536), (2560, 1536));
-        // Auto (0x0) with missing client size: fallback to 1080p
         assert_eq!(super::target_resolution(&cfg, 0, 0), (1920, 1080));
     }
 }

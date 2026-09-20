@@ -122,7 +122,10 @@ pub fn recover(data: &mut [Option<Vec<u8>>], parity: &[Option<Vec<u8>>]) -> bool
     let miss_n = missing.len();
     let mut rhs = vec![vec![0u8; width]; miss_n];
     for (row, &p) in used_p.iter().enumerate() {
-        let mut rec = parity[p].as_ref().unwrap().clone();
+        let Some(rec_slot) = parity.get(p).and_then(|opt| opt.as_ref()) else {
+            return false;
+        };
+        let mut rec = rec_slot.clone();
         rec.resize(width, 0);
         for byte in 0..width {
             let mut s = rec[byte];

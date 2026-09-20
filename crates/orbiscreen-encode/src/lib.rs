@@ -154,7 +154,6 @@ fn set_u32_if_present(el: &gstreamer::Element, name: &str, value: u32) {
 
 pub fn suggested_bitrate_kbps(width: u32, height: u32, framerate: u32) -> u32 {
     let pps = (width as u64) * (height as u64) * (framerate.max(1) as u64);
-    // Target ~0.08 bits per pixel for clean desktop streaming, clamped between 8 Mbps and 50 Mbps
     let kbps = (pps * 8 / 100 / 1000) as u32;
     kbps.clamp(8_000, 50_000)
 }
@@ -171,14 +170,12 @@ pub fn one_frame_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
 
 pub fn low_latency_vbv_ms(framerate: u32) -> u32 {
     let fps = framerate.max(1);
-    // 100ms to 400ms provides low-latency responsiveness without frame starvation
     (1000u32 / fps * 6).clamp(100, 400)
 }
 
 pub fn low_latency_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
     let fps = framerate.max(1);
     let one_frame = bitrate_kbps.max(1).div_ceil(fps).max(1);
-    // 6 frames of headroom for IDR keyframes and motion bursts, minimum 300 KB
     (one_frame * 6).max(300)
 }
 
@@ -365,7 +362,6 @@ impl Encoder {
             if encoder.find_property("b-frames").is_some() {
                 encoder.set_property_from_str("b-frames", "0");
             }
-            // Prevent catastrophic pixelation by capping maximum QP
             set_u32_if_present(&encoder, "qp-max-i", 35);
             set_u32_if_present(&encoder, "qp-max-p", 38);
         }

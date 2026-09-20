@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.30.9
+Version:        0.31.0
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,6 +144,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Sun Sep 20 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.31.0-1
+- Release 0.31.0: Add dedicated WebSocket input channel on /input/ws eliminating mouse lag, stutter, and HTTP queue backpressure; bind uinput input devices to KWin virtual output in kwinrc confining touch and touchpad to virtual display; add in-session resolution control with chips and custom input in Android settings; eliminate unwrap panics across production code; purge internal codebase comments.
+
 * Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.9-1
 - Release 0.30.9: Prevent GStreamer segmentation fault and CRITICAL disposal warnings on USB disconnect with RAII PipelineGuard and synchronous State::Null teardown; perform display session attach before constructing video pipeline; implement smart multi-client session routing correlating client key and unattached sessions; pass X-Orbiscreen-Session and client key in ExoPlayer headers while preserving session across transient reconnects.
 

@@ -10,6 +10,7 @@ pkgver=0.30.6
 pkgver=0.30.7
 pkgver=0.30.8
 pkgver=0.30.9
+pkgver=0.31.0
 pkgrel=1
 pkgdesc="Turn Android devices into high-performance secondary monitors for Linux (Wayland & X11)"
 arch=('x86_64')

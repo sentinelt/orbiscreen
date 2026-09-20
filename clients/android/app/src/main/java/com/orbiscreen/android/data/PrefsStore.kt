@@ -109,6 +109,10 @@ class PrefsStore(context: Context) {
         get() = prefs.getString(KEY_SCALE_MODE, "fit") ?: "fit"
         set(value) { prefs.edit { putString(KEY_SCALE_MODE, value) } }
 
+    var resolutionPreset: String
+        get() = prefs.getString(KEY_RESOLUTION_PRESET, "native") ?: "native"
+        set(value) { prefs.edit { putString(KEY_RESOLUTION_PRESET, value) } }
+
     fun clearRecent() {
         prefs.edit {
             remove(KEY_RECENT_HOST); remove(KEY_RECENT_PORT); remove(KEY_RECENT_TS)
@@ -129,5 +133,6 @@ class PrefsStore(context: Context) {
         private const val KEY_POINTER_SPEED = "pointer_speed"
         private const val KEY_TOUCH_MODE = "touch_mode"
         private const val KEY_SCALE_MODE = "scale_mode"
+        private const val KEY_RESOLUTION_PRESET = "resolution_preset"
     }
 }

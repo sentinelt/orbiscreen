@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.31.0] - 2026-09-20
+
+Eliminate mouse cursor lag and motion queuing by introducing a persistent WebSocket input channel, confine uinput touchscreen, touchpad, and pointer devices strictly to the Orbiscreen virtual display in KWin/Wayland via dynamic `kwinrc` configuration and D-Bus reload, add full in-session display resolution controls (chips and custom dimensions) in the Android client settings sheet, eliminate `unwrap()` panics across production daemon and transport code, and purge all internal source comments while standardizing configuration comments.
+
+### ⚡ Performance & Low-Latency Input
+- **WebSocket Input Channel (`crates/orbiscreen-transport/src/lib.rs`, `InputDispatcher.kt`)**:
+  - Added dedicated `/input/ws` WebSocket upgrade endpoint in the transport daemon for sub-millisecond motion event dispatch directly to `DisplayCtl`.
+  - Upgraded Android `InputDispatcher` to stream pointer and touch movement events over WebSocket, completely eliminating HTTP per-event round-trip latency, connection setup overhead, and queue backpressure timeouts.
+  - Retained reliable HTTP fallback for discrete button and key events when WebSocket connection is initializing or reconnecting.
+
+### 🖥️ KWin / Wayland Display Confinement
+- **Dedicated Output Mapping (`crates/orbiscreen-input/src/x11.rs`)**:
+  - Added `configure_kwin_device` to automatically register uinput mouse/keyboard, touchscreen, and tablet devices in `~/.config/kwinrc` under `[InputDevice][<name>]` with `OutputName=<virtual-output>`.
+  - Invokes `qdbus org.kde.KWin /KWin reconfigure` upon device creation under Wayland, confining pointer, touch, and touchpad inputs strictly to the Orbiscreen virtual monitor instead of bleeding across all physical displays.
+
+### 📱 Android In-Session Resolution Controls
+- **Resolution Switcher (`StreamScreen.kt`, `StreamViewModel.kt`, `PrefsStore.kt`)**:
+  - Added resolution preset chips (**Native**, **720p**, **1080p**, **1440p**, **2K (2560x1600)**) and custom Width × Height inputs to the `ConnectionSettingsSheet`.
+  - Dynamically adapts dimension orientation (landscape vs portrait) and immediately reconfigures stream dimensions via host control without session drop.
+  - Persists user resolution preference in `PrefsStore` and automatically restores it upon subsequent connections.
+
+### 🛡️ Safety & Code Quality Hardening
+- **Panic & Crash Elimination (`client_display.rs`, `fec.rs`, `lib.rs`, `StreamScreen.kt`)**:
+  - Replaced `unwrap()` calls in production code paths with idiomatic safe alternatives (`.cloned()`, `let Some(...) = ... else`, safe slice indexing).
+  - Eliminated non-null assertion crash risks (`!!`) in Android key mapping.
+  - Removed unused `quinn-proto` and `tracing` dependencies.
+  - Purged all internal source comments across `.rs` and `.kt` files, verifying 0 internal comments.
+
+### 📦 Packaging & Versions
+- Bumped workspace package version to `0.31.0`.
+- Incremented Android client `versionCode` to `115` and updated `versionName` to `"0.31.0"`.
+- Updated `tauri.conf.json` version to `0.31.0`.
+- Bumped PKGBUILD `pkgver` to `0.31.0`.
+- Added `0.31.0-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+
 ## [v0.30.9] - 2026-09-19
 
 Prevent GStreamer segmentation fault and GLib aggregator assertions upon USB disconnection or protocol error, enforce strict RAII `PipelineGuard` with synchronous `State::Null` teardown, isolate display session acquisition before constructing video pipelines, implement intelligent multi-client session routing in the daemon via client keys and unattached session tracking, and preserve active sessions in the Android client across transient reconnections.

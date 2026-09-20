@@ -91,6 +91,8 @@
     <string name="display_settings_title">Display</string>
     <string name="display_settings_sub">Resolution &amp; scaling</string>
 
+    <string name="resolution_title">Resolution</string>
+    <string name="resolution_native">Native</string>
     <string name="res_section_standard">Standard</string>
     <string name="res_section_phone">Device</string>
     <string name="res_native_label">Native</string>

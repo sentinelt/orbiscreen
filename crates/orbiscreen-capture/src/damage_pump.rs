@@ -107,7 +107,6 @@ fn run(
                     .strip_prefix("VIRTUAL-")
                     .unwrap_or(&clean_target);
 
-                // 1. Exact match
                 if let Some((proxy, _)) = state
                     .output_names
                     .iter()
@@ -116,7 +115,6 @@ fn run(
                     return Some(proxy.clone());
                 }
 
-                // 2. Normalized prefix match (e.g. Orbi-xxx vs Virtual-Orbi-xxx)
                 if let Some((proxy, _)) = state.output_names.iter().find(|(_, name)| {
                     let upper = name.to_uppercase();
                     let upper_slug = upper.strip_prefix("VIRTUAL-").unwrap_or(&upper);
@@ -125,14 +123,10 @@ fn run(
                     return Some(proxy.clone());
                 }
 
-                // Crucial: When a specific virtual output is requested, do NOT fall back
-                // to arbitrary virtual displays! Return None so the caller loop waits for
-                // KWin to announce this specific output.
                 return None;
             }
         }
 
-        // Generic fallback only when no specific target was requested
         state
             .output_names
             .iter()

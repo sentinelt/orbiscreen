@@ -492,6 +492,7 @@ fn build_router(state: AppState) -> Router {
         .route("/au", get(au_handler))
         .route("/idr", get(idr_handler))
         .route("/input", post(input_post))
+        .route("/input/ws", get(input_ws))
         .route("/api/control", post(api_control))
         .route(
             "/api/session",
@@ -1300,6 +1301,37 @@ async fn root_handler() -> Html<&'static str> {
     )
 }
 
+async fn input_ws(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ws: axum::extract::ws::WebSocketUpgrade,
+) -> axum::response::Response {
+    let session = headers
+        .get("x-orbiscreen-session")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    ws.on_upgrade(move |socket| handle_input_ws(socket, state.displays, state.input_tx, session))
+}
+
+async fn handle_input_ws(
+    mut socket: axum::extract::ws::WebSocket,
+    displays: Option<DisplayCtl>,
+    input_tx: tokio::sync::mpsc::Sender<IncomingInput>,
+    session: Option<String>,
+) {
+    while let Some(Ok(msg)) = socket.recv().await {
+        if let axum::extract::ws::Message::Text(text) = msg {
+            if let Ok(input) = serde_json::from_str::<IncomingInput>(&text) {
+                if let Some(ctl) = &displays {
+                    ctl.input(session.clone(), input).await;
+                } else if input_tx.try_send(input).is_err() {
+                    debug!("input ws queue full; dropping event");
+                }
+            }
+        }
+    }
+}
+
 async fn input_post(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1671,7 +1703,9 @@ async fn stream_handler(
     let displays = state.displays.clone();
     let lag_ctl = displays.clone();
     let lag_session = session_id.clone();
-    let pipeline_for_task = pipeline_guard.0.take().unwrap();
+    let Some(pipeline_for_task) = pipeline_guard.0.take() else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
 
     let refresh_hz = state.refresh_hz.max(1);
     let nominal_frame_ns = 1_000_000_000u64 / u64::from(refresh_hz);

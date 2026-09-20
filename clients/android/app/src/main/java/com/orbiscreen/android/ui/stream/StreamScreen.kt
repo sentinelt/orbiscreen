@@ -408,6 +408,10 @@ fun StreamScreen(
                     viewModel.updateDimensions(w, h, label)
                     showSettingsSheet = false
                 },
+                onSetResolutionPreset = { preset, w, h ->
+                    viewModel.setResolutionPreset(preset, w, h)
+                    showSettingsSheet = false
+                },
                 onScaleModeChange = { modeKey ->
                     viewModel.setScaleModeByKey(modeKey)
                 },
@@ -510,6 +514,7 @@ private fun ConnectionSettingsSheet(
     currentHeight: Int,
     currentPointerSpeed: Float,
     onApplyDimensions: (Int, Int, String) -> Unit,
+    onSetResolutionPreset: (String, Int, Int) -> Unit,
     onScaleModeChange: (String) -> Unit,
     onPointerSpeedChange: (Float) -> Unit,
     onDismiss: () -> Unit,
@@ -577,6 +582,100 @@ private fun ConnectionSettingsSheet(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
+                }
+            }
+
+            var resolutionPreset by remember { mutableStateOf(prefs.resolutionPreset) }
+            var customW by remember { mutableStateOf("") }
+            var customH by remember { mutableStateOf("") }
+
+            ElevatedCard(
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.resolution_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    
+                    val resChip: @Composable (String, String, Int, Int) -> Unit = { label, key, w, h ->
+                        val isSel = resolutionPreset == key
+                        Surface(
+                            onClick = {
+                                resolutionPreset = key
+                                onSetResolutionPreset(key, w, h)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            border = if (isSel) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                            modifier = Modifier.padding(end = 6.dp, bottom = 6.dp).height(32.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp)) {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        resChip(stringResource(R.string.resolution_native), "native", 0, 0)
+                        resChip("720p", "720p", 1280, 720)
+                        resChip("1080p", "1080p", 1920, 1080)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        resChip("1440p", "1440p", 2560, 1440)
+                        resChip("2K (2560x1600)", "2k", 2560, 1600)
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BasicTextField(
+                            value = customW,
+                            onValueChange = { customW = it },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).height(36.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 8.dp),
+                            decorationBox = { innerTextField ->
+                                if (customW.isEmpty()) Text("Width", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                innerTextField()
+                            }
+                        )
+                        Text("x", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        BasicTextField(
+                            value = customH,
+                            onValueChange = { customH = it },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).height(36.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 8.dp),
+                            decorationBox = { innerTextField ->
+                                if (customH.isEmpty()) Text("Height", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                innerTextField()
+                            }
+                        )
+                        Button(
+                            onClick = {
+                                val w = customW.toIntOrNull() ?: 0
+                                val h = customH.toIntOrNull() ?: 0
+                                if (w > 0 && h > 0) {
+                                    val key = "custom_${w}x${h}"
+                                    resolutionPreset = key
+                                    onSetResolutionPreset(key, w, h)
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Text(stringResource(R.string.res_apply), fontSize = 12.sp)
+                        }
+                    }
                 }
             }
 
@@ -1137,7 +1236,7 @@ private fun sendChar(c: Char, onKey: (Int, Boolean) -> Unit) {
             onKey(42, false)
         }
     } else if (c in shiftedChars) {
-        val code = shiftedChars[c]!!
+        val code = shiftedChars[c] ?: return
         onKey(42, true)
         onKey(code, true)
         onKey(code, false)

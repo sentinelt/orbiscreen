@@ -85,7 +85,7 @@ internal class OrderedInputQueue<T>(capacity: Int = 64) {
         true
     }
 
-    suspend fun drain(deliver: (T) -> Unit) {
+    suspend fun drain(deliver: (T, Boolean) -> Unit) {
         try {
             for (entry in channel) {
                 var currentEntry = entry
@@ -98,7 +98,8 @@ internal class OrderedInputQueue<T>(capacity: Int = 64) {
                             currentEntry.consumed = true
                             currentEntry.values
                         }
-                        for (value in values) deliver(value)
+                        val isMotion = currentEntry.motionKey != null
+                        for (value in values) deliver(value, isMotion)
                         currentEntry = next
                     }
                 }
@@ -106,10 +107,10 @@ internal class OrderedInputQueue<T>(capacity: Int = 64) {
                     currentEntry.consumed = true
                     currentEntry.values
                 }
-                for (value in values) deliver(value)
+                val isMotion = currentEntry.motionKey != null
+                        for (value in values) deliver(value, isMotion)
             }
         } catch (_: kotlinx.coroutines.CancellationException) {
-            // normal termination
         }
     }
 
@@ -142,6 +143,27 @@ class InputDispatcher(
     @Volatile
     var sessionId: String? = null
 
+    @Volatile
+    private var webSocket: okhttp3.WebSocket? = null
+
+    private fun ensureWebSocket() {
+        if (webSocket != null) return
+        val t = tokenProvider?.invoke()?.takeIf { it.isNotBlank() } ?: token
+        if (t.isBlank()) return
+        val builder = Request.Builder().url("ws://$host:$port/input/ws")
+            .header("Authorization", "Bearer $t")
+        val sid = sessionIdProvider?.invoke()?.takeIf { it.isNotBlank() } ?: sessionId
+        sid?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
+        webSocket = http.newWebSocket(builder.build(), object : okhttp3.WebSocketListener() {
+            override fun onClosed(webSocket: okhttp3.WebSocket, code: Int, reason: String) {
+                this@InputDispatcher.webSocket = null
+            }
+            override fun onFailure(webSocket: okhttp3.WebSocket, t: Throwable, response: okhttp3.Response?) {
+                this@InputDispatcher.webSocket = null
+            }
+        })
+    }
+
     private var streamWidth: Int = displayWidth
     private var streamHeight: Int = displayHeight
     private var lastStylusPressure: Float = 0f
@@ -153,7 +175,7 @@ class InputDispatcher(
     init {
         scope.launch {
             try {
-                queue.drain { send(it) }
+                queue.drain { payload, isMotion -> send(payload, isMotion) }
             } finally {
                 queue.close()
                 http.dispatcher.executorService.shutdown()
@@ -367,6 +389,7 @@ class InputDispatcher(
 
     fun release() {
         queue.close()
+        webSocket?.close(1000, null)
     }
 
     private fun map(localX: Float, localY: Float, w: Int, h: Int): Pair<Int, Int> {
@@ -378,8 +401,19 @@ class InputDispatcher(
 
     private var lastUnauthorizedMs = 0L
 
-    private fun send(payload: JSONObject) {
+    private fun send(payload: JSONObject, isMotion: Boolean = false) {
         try {
+            ensureWebSocket()
+            val ws = webSocket
+            var sentViaWs = false
+            if (ws != null) {
+                sentViaWs = ws.send(payload.toString())
+            }
+            
+            if (isMotion || sentViaWs) {
+                return
+            }
+
             val t = tokenProvider?.invoke()?.takeIf { it.isNotBlank() } ?: token
             if (t.isBlank()) {
                 return

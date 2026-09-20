@@ -91,6 +91,8 @@
     <string name="display_settings_title">العرض</string>
     <string name="display_settings_sub">الدقة والتحجيم</string>
 
+    <string name="resolution_title">دقة الشاشة</string>
+    <string name="resolution_native">الأصلية</string>
     <string name="res_section_standard">الدقة القياسية</string>
     <string name="res_section_phone">دقة الشاشة</string>
     <string name="res_native_label">الأصلية</string>

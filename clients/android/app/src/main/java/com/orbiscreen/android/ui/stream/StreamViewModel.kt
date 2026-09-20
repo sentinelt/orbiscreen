@@ -326,10 +326,28 @@ class StreamViewModel(
             inputDispatcher?.sessionId = session?.id
             val hostInfo = info.second
             val (nativeW, nativeH, _) = detectNativeDisplay()
+            
+            val preset = prefs.resolutionPreset
+            val (presetW, presetH) = when {
+                preset == "720p" -> 1280 to 720
+                preset == "1080p" -> 1920 to 1080
+                preset == "1440p" -> 2560 to 1440
+                preset == "2k" -> 2560 to 1600
+                preset.startsWith("custom_") -> {
+                    val parts = preset.removePrefix("custom_").split("x")
+                    if (parts.size == 2) {
+                        (parts[0].toIntOrNull() ?: nativeW) to (parts[1].toIntOrNull() ?: nativeH)
+                    } else {
+                        nativeW to nativeH
+                    }
+                }
+                else -> nativeW to nativeH
+            }
+            
             val isPortrait = context.resources.configuration.orientation ==
                 android.content.res.Configuration.ORIENTATION_PORTRAIT
-            val targetW = if (isPortrait) nativeH else nativeW
-            val targetH = if (isPortrait) nativeW else nativeH
+            val targetW = if (isPortrait) minOf(presetW, presetH) else maxOf(presetW, presetH)
+            val targetH = if (isPortrait) maxOf(presetW, presetH) else minOf(presetW, presetH)
             val w = session?.width
                 ?: targetW.takeIf { it > 0 }
                 ?: hostInfo?.width
@@ -468,6 +486,30 @@ class StreamViewModel(
     fun setScaleModeByKey(key: String) {
         prefs.scaleMode = key
         _state.value = _state.value.copy(scaleMode = scaleModeFromPref(key))
+    }
+
+    fun setResolutionPreset(preset: String, w: Int, h: Int) {
+        prefs.resolutionPreset = preset
+        val (nativeW, nativeH, _) = detectNativeDisplay()
+        val (presetW, presetH) = when {
+            preset == "720p" -> 1280 to 720
+            preset == "1080p" -> 1920 to 1080
+            preset == "1440p" -> 2560 to 1440
+            preset == "2k" -> 2560 to 1600
+            preset.startsWith("custom_") -> {
+                val parts = preset.removePrefix("custom_").split("x")
+                if (parts.size == 2) {
+                    (parts[0].toIntOrNull() ?: nativeW) to (parts[1].toIntOrNull() ?: nativeH)
+                } else {
+                    nativeW to nativeH
+                }
+            }
+            else -> nativeW to nativeH
+        }
+        val isPortrait = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+        val targetW = if (isPortrait) minOf(presetW, presetH) else maxOf(presetW, presetH)
+        val targetH = if (isPortrait) maxOf(presetW, presetH) else minOf(presetW, presetH)
+        updateDimensions(targetW, targetH, if (preset == "native") "Native" else "${targetW}x${targetH}")
     }
 
     fun updateDimensions(w: Int, h: Int, label: String = "${w}x${h}", fps: Int = 60) {

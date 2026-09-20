@@ -30,6 +30,7 @@ async function invoke(cmd, args = {}) {
     if (cmd === "get_app_version") return "0.30.7";
     if (cmd === "get_app_version") return "0.30.8";
     if (cmd === "get_app_version") return "0.30.9";
+    if (cmd === "get_app_version") return "0.31.0";
     return null;
 }
 

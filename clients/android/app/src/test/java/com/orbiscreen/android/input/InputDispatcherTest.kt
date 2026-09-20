@@ -63,7 +63,7 @@ class InputDispatcherTest {
         queue.submit(listOf("move4"), "pointer")
         queue.close()
         val delivered = mutableListOf<String>()
-        queue.drain { delivered.add(it) }
+        queue.drain { v, _ -> delivered.add(v) }
         assertEquals(listOf("move2", "click-position", "down", "up", "move4"), delivered)
     }
 
@@ -80,7 +80,7 @@ class InputDispatcherTest {
         queue.submit(listOf("touch-up"))
         queue.close()
         val delivered = mutableListOf<String>()
-        queue.drain { delivered.add(it) }
+        queue.drain { v, _ -> delivered.add(v) }
         assertEquals(
             listOf("stylus-down", "stylus2", "stylus-up", "touch-down", "touch2", "touch-up"),
             delivered,
@@ -97,7 +97,7 @@ class InputDispatcherTest {
         queue.submit(listOf("key-up"))
         queue.close()
         val delivered = mutableListOf<String>()
-        queue.drain { delivered.add(it) }
+        queue.drain { v, _ -> delivered.add(v) }
         assertEquals(listOf("pointer1", "touch0", "touch1", "pointer2", "key-up"), delivered)
     }
 
@@ -118,7 +118,7 @@ class InputDispatcherTest {
         assertFalse(submitted.await(100, TimeUnit.MILLISECONDS))
         val delivered = mutableListOf<Int>()
         withTimeout(5_000) {
-            queue.drain { delivered.add(it) }
+            queue.drain { v, _ -> delivered.add(v) }
             producer.await()
         }
         assertEquals((0..129).toList(), delivered)
@@ -132,12 +132,12 @@ class InputDispatcherTest {
         val finish = CountDownLatch(1)
         val delivered = mutableListOf<String>()
         val consumer = async(Dispatchers.IO) {
-            queue.drain {
-                if (it == "first") {
+            queue.drain { v, _ ->
+                if (v == "first") {
                     entered.countDown()
                     assertTrue(finish.await(5, TimeUnit.SECONDS))
                 }
-                delivered.add(it)
+                delivered.add(v)
             }
         }
         try {
@@ -166,7 +166,7 @@ class InputDispatcherTest {
         queue.close()
         val delivered = mutableListOf<String>()
         withTimeout(5_000) {
-            queue.drain { delivered.add(it) }
+            queue.drain { v, _ -> delivered.add(v) }
             val accepted = producer.await()
             assertEquals(if (accepted) listOf("down", "up") else listOf("down"), delivered)
         }
@@ -180,7 +180,7 @@ class InputDispatcherTest {
         queue.close()
         assertFalse(queue.submit(listOf("late")))
         val delivered = mutableListOf<String>()
-        queue.drain { delivered.add(it) }
+        queue.drain { v, _ -> delivered.add(v) }
         assertEquals(listOf("down", "up"), delivered)
     }
 }

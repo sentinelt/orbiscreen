@@ -139,6 +139,10 @@ impl UinputInjector {
             .build(&tab_name)?;
 
         info!("opened uinput devices: mouse/keyboard, touchscreen, and tablet");
+        if let Some(output) = spec.output_name.as_deref().filter(|s| !s.is_empty()) {
+            configure_kwin_device(&[&mk_name, &ts_name, &tab_name], output);
+        }
+
         let mut injector = Self {
             mouse_keyboard,
             touchscreen,
@@ -480,6 +484,50 @@ impl UinputInjector {
         events.push(SynEvent::new(Syn::REPORT).into());
         self.tablet.write_events(&events)?;
         Ok(())
+    }
+}
+
+fn configure_kwin_device(device_names: &[&str], output_name: &str) {
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+        return;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let kwinrc_path = format!("{}/.config/kwinrc", home);
+        let content = std::fs::read_to_string(&kwinrc_path).unwrap_or_default();
+        let mut lines: Vec<String> = content.lines().map(String::from).collect();
+
+        for dev in device_names {
+            let section = format!("[InputDevice][{}]", dev);
+            let mut in_section = false;
+            let mut replaced = false;
+            let mut i = 0;
+            while i < lines.len() {
+                if lines[i].starts_with('[') {
+                    if in_section {
+                        break;
+                    }
+                    if lines[i] == section {
+                        in_section = true;
+                    }
+                } else if in_section && lines[i].starts_with("OutputName=") {
+                    lines[i] = format!("OutputName={}", output_name);
+                    replaced = true;
+                    break;
+                }
+                i += 1;
+            }
+            if !in_section {
+                lines.push(section);
+                lines.push(format!("OutputName={}", output_name));
+            } else if !replaced {
+                lines.insert(i, format!("OutputName={}", output_name));
+            }
+        }
+
+        let _ = std::fs::write(&kwinrc_path, lines.join("\n") + "\n");
+        let _ = std::process::Command::new("qdbus")
+            .args(["org.kde.KWin", "/KWin", "reconfigure"])
+            .status();
     }
 }
 
