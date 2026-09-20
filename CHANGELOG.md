@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.31.1] - 2026-09-20
+
+Version bump to 0.31.1 across all packages; Android versionCode incremented to 116; sync release metadata in docs, specs, and badges.
+
 ## [v0.31.0] - 2026-09-20
 
 Eliminate mouse cursor lag and motion queuing by introducing a persistent WebSocket input channel, confine uinput touchscreen, touchpad, and pointer devices strictly to the Orbiscreen virtual display in KWin/Wayland via dynamic `kwinrc` configuration and D-Bus reload, add full in-session display resolution controls (chips and custom dimensions) in the Android client settings sheet, eliminate `unwrap()` panics across production daemon and transport code, and purge all internal source comments while standardizing configuration comments.
