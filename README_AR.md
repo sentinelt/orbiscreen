@@ -10,12 +10,6 @@
 
 **شاشة افتراضية ثانية حقيقية ومستقلة وبزمن استجابة فائق السرعة لنظام Linux (Wayland و X11) تُبث إلى أجهزة وهواتف Android.**
 
-[![الإصدار](https://img.shields.io/badge/version-0.30.6-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
-[![الإصدار](https://img.shields.io/badge/version-0.30.7-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
-[![الإصدار](https://img.shields.io/badge/version-0.30.8-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
-[![الإصدار](https://img.shields.io/badge/version-0.30.9-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
-[![الإصدار](https://img.shields.io/badge/version-0.31.0-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
-[![الإصدار](https://img.shields.io/badge/version-0.31.1-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
 [![الإصدار](https://img.shields.io/badge/version-0.31.2-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=for-the-badge)](LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.92%2B-16a34a?style=for-the-badge&logo=rust)
