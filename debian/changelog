@@ -1,12 +1,13 @@
-orbiscreen (0.31.1-1~ubuntunoble1) noble; urgency=medium
+orbiscreen (0.31.2-1~ubuntunoble1) noble; urgency=medium
 
-  * Release 0.31.1 for Ubuntu noble.
-  * Bump version to 0.31.1 across all packages; Android versionCode 116.
+  * Release 0.31.2 for Ubuntu noble.
+  * Bump version to 0.31.2 across all packages; Android versionCode 117.
+  * Performance: increased HTTP/UDP buffer sizes, relaxed frame dropping thresholds, frame rate limiting in capture pump.
   * Sync release metadata in docs, specs, and badges.
 
- -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Sun, 20 Sep 2026 12:00:00 +0300
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Mon, 21 Sep 2026 15:00:00 +0300
 
-orbiscreen (0.31.0-1~ubuntunoble1) noble; urgency=medium
+orbiscreen (0.31.1-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.31.0 for Ubuntu noble.
   * Add dedicated WebSocket input channel on /input/ws eliminating mouse lag, stutter, and queue backpressure.

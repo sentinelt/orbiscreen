@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.31.2] - 2026-09-21
+
+**Performance Fixes**
+- Android HTTP/MPEG-TS: Increased buffer durations from 30/80/15/25ms to 500/2000/200/500ms
+- Android HTTP/MPEG-TS: Increased LiveConfiguration targetOffset from 30ms to 150ms
+- Android UDP: Increased socket buffers from 128/256KB to 1MB each
+- Android UDP: Increased socket timeout from 20ms to 50ms
+- Android VideoRenderer: Relaxed frame dropping thresholds (-300ms → -500ms for keyframe request, -150ms → -300ms for frame drop)
+- Encoder VBV: Reduced low-latency buffer from 6 frames to 4 frames (50-200ms, 200KB min)
+- Capture pump: Added frame rate limiting using refresh_hz parameter to prevent encoder overrun
+
 ## [v0.31.1] - 2026-09-20
 
 Version bump to 0.31.1 across all packages; Android versionCode incremented to 116; sync release metadata in docs, specs, and badges.

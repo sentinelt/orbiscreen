@@ -255,7 +255,7 @@ class PlayerHolder(
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
             val loadControl = DefaultLoadControl.Builder()
-                .setBufferDurationsMs(30, 80, 15, 25)
+                .setBufferDurationsMs(500, 2000, 200, 500)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
@@ -269,7 +269,7 @@ class PlayerHolder(
                         .setMimeType(MimeTypes.VIDEO_MP2T)
                         .setLiveConfiguration(
                             MediaItem.LiveConfiguration.Builder()
-                                .setTargetOffsetMs(30)
+                                .setTargetOffsetMs(150)
                                 .setMinPlaybackSpeed(1.0f)
                                 .setMaxPlaybackSpeed(1.0f)
                                 .build()
@@ -575,13 +575,13 @@ private class LowLatencyVideoRenderer(
     }
 
     override fun shouldDropBuffersToKeyframe(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        if (earlyUs < -300_000) {
+        if (earlyUs < -500_000) {
             onLagDetected()
         }
         return false
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        return earlyUs < -150_000L && !isLastBuffer
+        return earlyUs < -300_000L && !isLastBuffer
     }
 }

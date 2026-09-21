@@ -170,13 +170,13 @@ pub fn one_frame_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
 
 pub fn low_latency_vbv_ms(framerate: u32) -> u32 {
     let fps = framerate.max(1);
-    (1000u32 / fps * 6).clamp(100, 400)
+    (1000u32 / fps * 4).clamp(50, 200)
 }
 
 pub fn low_latency_vbv_kb(bitrate_kbps: u32, framerate: u32) -> u32 {
     let fps = framerate.max(1);
     let one_frame = bitrate_kbps.max(1).div_ceil(fps).max(1);
-    (one_frame * 6).max(300)
+    (one_frame * 4).max(200)
 }
 
 fn configure_one_frame_vbv(encoder: &gstreamer::Element, bitrate_kbps: u32, framerate: u32) {

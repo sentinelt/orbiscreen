@@ -119,8 +119,8 @@ class UdpPlayer(
             hostAddr = addr
             hostPort = port
             val sock = DatagramSocket()
-            sock.receiveBufferSize = 128 * 1024
-            sock.sendBufferSize = 256 * 1024
+            sock.receiveBufferSize = 1024 * 1024
+            sock.sendBufferSize = 1024 * 1024
             sock.soTimeout = 200
             socket = sock
             running = true
@@ -152,7 +152,7 @@ class UdpPlayer(
                 stop()
                 return false
             }
-            sock.soTimeout = 20
+            sock.soTimeout = 50
             lastHeardMs.set(System.currentTimeMillis())
             recvJob = scope.launch { recvLoop() }
             pingJob = scope.launch { pingLoop() }

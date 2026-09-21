@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.31.1
+Version:        0.31.2
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -143,10 +143,10 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
-* Sun Sep 20 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.31.1-1
-- Release 0.31.1: Bump version to 0.31.1 across all packages; Android versionCode 116; sync release metadata in docs, specs, and badges.
+* Mon Sep 21 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.31.2-1
+- Release 0.31.2: Bump version to 0.31.2 across all packages; Android versionCode 117; performance fixes for buffering, frame dropping, and capture frame pacing.
 
-* Sun Sep 20 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.31.0-1
+* Sun Sep 20 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.31.1-1
 - Release 0.31.0: Add dedicated WebSocket input channel on /input/ws eliminating mouse lag, stutter, and HTTP queue backpressure; bind uinput input devices to KWin virtual output in kwinrc confining touch and touchpad to virtual display; add in-session resolution control with chips and custom input in Android settings; eliminate unwrap panics across production code; purge internal codebase comments.
 
 * Sat Sep 19 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.30.9-1

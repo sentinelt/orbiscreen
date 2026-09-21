@@ -571,14 +571,16 @@ async fn open_session(
 fn spawn_capture_pump(
     capture: Arc<KwinVirtualCapture>,
     encoder: Arc<Encoder>,
-    _refresh_hz: u32,
+    refresh_hz: u32,
     mut shutdown: watch::Receiver<bool>,
 ) {
     tokio::spawn(async move {
         const KEEPALIVE: Duration = Duration::from_millis(100);
+        let frame_interval_ns = 1_000_000_000u64 / refresh_hz.max(1) as u64;
         let started = std::time::Instant::now();
         let mut last_pts_ns: u64 = 0;
         let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> = None;
+        let mut next_frame_target_ns = started.elapsed().as_nanos() as u64;
         loop {
             if *shutdown.borrow() {
                 break;
@@ -602,6 +604,13 @@ fn spawn_capture_pump(
                             _ => warn!("frame push rejected: {e}"),
                         }
                     }
+                    next_frame_target_ns += frame_interval_ns;
+                    if next_frame_target_ns > now_ns {
+                        let sleep_ns = next_frame_target_ns - now_ns;
+                        if sleep_ns > 1_000_000 {
+                            tokio::time::sleep(std::time::Duration::from_nanos(sleep_ns)).await;
+                        }
+                    }
                 }
                 Ok(Err(e)) => {
                     warn!("client display capture ended: {e}");
@@ -620,6 +629,13 @@ fn spawn_capture_pump(
                     ) = encoder.push_frame(data, *width, *height, pts_ns)
                     {
                         break;
+                    }
+                    next_frame_target_ns += frame_interval_ns;
+                    if next_frame_target_ns > now_ns {
+                        let sleep_ns = next_frame_target_ns - now_ns;
+                        if sleep_ns > 1_000_000 {
+                            tokio::time::sleep(std::time::Duration::from_nanos(sleep_ns)).await;
+                        }
                     }
                 }
             }
