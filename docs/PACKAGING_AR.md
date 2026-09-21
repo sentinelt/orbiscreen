@@ -2,6 +2,12 @@
 
 # دليل التغليف متعدد التوزيعات - Orbiscreen
 
+[![الإصدار](https://img.shields.io/badge/version-0.30.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.30.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.30.8-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.30.9-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.31.0-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.31.1-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الإصدار](https://img.shields.io/badge/version-0.31.2-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.92%2B-16a34a?style=flat-square&logo=rust)
@@ -12,6 +18,12 @@
 <a id="packaging-matrix"></a>
 ## 📦 مصفوفة حزم التوزيعات
 
+مصفوفة الإصدار: `0.30.6` (مساحة العمل)، `versionCode = 111` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.30.7` (مساحة العمل)، `versionCode = 112` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.30.8` (مساحة العمل)، `versionCode = 113` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.30.9` (مساحة العمل)، `versionCode = 114` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.31.0` (مساحة العمل)، `versionCode = 115` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.31.1` (مساحة العمل)، `versionCode = 116` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
 مصفوفة الإصدار: `0.31.2` (مساحة العمل)، `versionCode = 117` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع: راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
 
 يوفّر Orbiscreen تكوينات البناء وتعريفات الحزم لجميع توزيعات Linux الرئيسية وAndroid:
@@ -70,97 +82,146 @@ cd clients/android
 
 ---
 
-## 🏪 مستودعات التوزيعات
+## 🎯 التوزيعات والأهداف المدعومة
 
-### Fedora COPR (آلي عبر Packit)
+| الهدف | التنسيق | التوزيعات | الحالة |
+|--------|---------|-------------|--------|
+| Linux x86_64 | `.deb` | Ubuntu 22.04+, Debian 12+, Mint 21+, Pop!_OS 22.04+ | ✅ آلي |
+| Linux x86_64 | `.rpm` | Fedora 38+, RHEL 9+, Rocky/Alma 9+, openSUSE Tumbleweed/Leap 15.5+ | ✅ آلي |
+| Linux x86_64 | `PKGBUILD` | Arch Linux, Manjaro, EndeavourOS, Garuda | ✅ آلي |
+| Linux x86_64 | `.AppImage` | أي توزيع يعتمد على glibc | ✅ آلي |
+| Linux x86_64 | `.tar.gz` | أي توزيع (تثبيت يدوي) | ✅ آلي |
+| Android ARM64 | `.apk` | Android 7.0+ (API 24+) | ✅ آلي |
 
-يحمل المستودع `.packit.yaml` مع spec بناء-من-المصدر ‏(`data/orbiscreen-copr.spec`، المستقل عن `data/orbiscreen.spec` المحلي الذي يغلّف الثنائيات الجاهزة): طلبات الدمج تبني الـRPM على Fedora المستقرة كفحص CI، وكل وسم ريليز على GitHub ينشره إلى COPR تلقائياً.
+---
 
-يعمل البناء دون اتصال بالإنترنت بالكامل داخل sandbox الـmock في COPR: يحمل SRPM شجرة اعتماديات كرايتس Rust في حزمة `Source1` مجهّلة ‏(`cargo vendor`، نحو 19MB مضغوطة)، لأن بناة COPR بلا وصول شبكي أثناء `%build` وسيفشل `cargo build --locked` العادي في الجلب من crates.io. لإعادة توليدها بعد تغيير اعتمادية: فُك أرشيف الريليز، شغّل `cargo vendor vendor`، اضغطها بـ `zstd -19`، وأعد بناء SRPM.
+## 📦 أرشيفات المصدر
 
-إعداد المُصين (مرة واحدة):
-1. سجّل الدخول إلى <https://copr.fedorainfracloud.org> بـ GitHub (يُنشئ الحساب).
-2. فعّل Packit من <https://packit.dev> ‏(Sign in with GitHub → وافق على مستودع `orbiscreen`).
-3. ادفع وسم الإصدار التالي؛ ينشئ Packit مشروع COPR ‏`shadow-x78/orbiscreen` عند أول بناء.
+يتم إنشاء أرشيفات مصدر الإصدار عبر مسار CI وإرفاقها بـ GitHub Releases:
 
-تثبيت المستخدم بعد النشر:
-```bash
-dnf copr enable shadow-x78/orbiscreen
-dnf install orbiscreen
+```
+orbiscreen-<version>.tar.gz          # الكود المصدري فقط
+orbiscreen-<version>-linux-x86_64.tar.gz  # ثنائيات جاهزة
 ```
 
-### بناء فيدورا الأصلي وحزم RPM عبر (GitHub Actions)
+يحتوي أرشيف المصدر على مساحة العمل الكاملة مع جميع الحزم والعملاء. يحتوي الأرشيف الثنائي على ثنائيات الإصدار المُخفّفة لـ `orbiscreen` و `orbiscreen-gui` (عند التوفر).
 
-يتوفر workflow مخصص في GitHub Actions باسم (`.github/workflows/fedora.yml`) يعمل مباشرة داخل حاويات Fedora الرسمية (`fedora:latest` و `41` و `40`). يقوم ببناء وفحص مساحة العمل بحزم فيدورا الأصلية وتوليد حزم RPM الجاهزة للتثبيت.
+---
 
-يمكنك إعادة البناء يدوياً في أي وقت من تبويب **Actions** في غيتهب:
-1. اذهب إلى **Actions** ← **Fedora RPM & CI**.
-2. اضغط على زر **Run workflow**، اختر الفرع وإصدار فيدورا المطلوب ثم اضغط تشغيل.
-3. ستجد ملفات حزم `.rpm` المبنية جاهزة للتحميل مباشرة من قسم **Artifacts** في تقرير التشغيل.
+## 🏗️ Fedora / RHEL / CentOS (COPR)
 
-
-### Ubuntu / Pop!_OS / Linux Mint (Launchpad PPA)
-
-مستودع Launchpad PPA الرسمي:
+### مستودع COPR
 ```bash
-sudo add-apt-repository ppa:shadow-x78/ppa -y
-sudo apt update
+sudo dnf copr enable shadow-x78/orbiscreen
+sudo dnf install orbiscreen
+```
+
+### البناء من ملف Spec
+```bash
+./scripts/package-rpm.sh
+```
+ملف RPM الناتج: `orbiscreen-<version>-1.x86_64.rpm`
+
+### ملف Spec
+`data/orbiscreen-copr.spec` يحتوي على تعريف بناء COPR مع:
+- BuildRequires: `cargo`, `rust >= 1.92`, `gstreamer1-devel`, `gstreamer1-plugins-base-devel`, `wayland-devel`, `libdrm-devel`, `kwayland-devel`, `kde-cli-tools`, `libinput-devel`, `libudev-devel`, `systemd-devel`, `openssl-devel`
+- Requires: `gstreamer1`, `gstreamer1-plugins-base`, `gstreamer1-plugins-good`, `gstreamer1-plugins-bad-free`, `gstreamer1-libav`, `kwayland`, `kwin`, `libinput`, `systemd`, `openssl-libs`, `webkit2gtk4.1` (GUI)
+
+---
+
+## 📦 Debian / Ubuntu / Linux Mint (.deb)
+
+### البناء من المصدر
+```bash
+./scripts/package-deb.sh
+```
+
+### ملف Control
+`debian/control` يحدّد:
+- Build-Depends: `cargo (>= 1.92)`, `rustc (>= 1.92)`, `libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`, `libwayland-dev`, `libdrm-dev`, `libkf5waylandclient-dev`, `libkf5kdelibs4support-dev`, `libinput-dev`, `libudev-dev`, `libsystemd-dev`, `libssl-dev`, `pkg-config`, `debhelper-compat (= 13)`, `cmake`
+- Depends: `${shlibs:Depends}`, `${misc:Depends}`, `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer1.0-plugins-bad`, `gstreamer1.0-libav`, `libwayland-client0`, `libkf5waylandclient5`, `libinput10`, `libudev1`, `libsystemd0`, `libssl3`, `webkit2gtk-4.1-0` (GUI)
+
+### التثبيت
+```bash
+sudo dpkg -i orbiscreen_<version>_amd64.deb
+sudo apt-get install -f
 ```
 
 ---
 
-## 🗑️ إزالة الحزم
+## 🏔️ Arch Linux / Manjaro (PKGBUILD)
 
-يتعامل كل مدير حزم مع الإزالة بنظافة:
+يحتوي جذر المستودع على ملف `PKGBUILD` مستقل:
 
-- **Debian / Ubuntu (`.deb`):** `sudo apt-get remove orbiscreen`
-- **Fedora / RHEL (`.rpm`):** `sudo dnf remove orbiscreen`
-- **آرش لينكس / مانجارو:** `sudo pacman -R orbiscreen`
-- **الأرشيف المستقل:** شغّل `./scripts/uninstall.sh` المرفق في المصدر أو مجلد الأرشيف.
-- **Android:** اضغط مطوّلاً على أيقونة التطبيق ← **App info** ← **Uninstall**.
+```bash
+makepkg -si
+```
+
+سيقوم هذا بـ:
+1. تنزيل أرشيف مصدر الإصدار
+2. التحقق من مجموعات التحقق SHA256
+3. البناء عبر `cargo build --release --workspace --locked`
+4. تشغيل اختبارات الوحدة
+5. تثبيت الثنائيات، إدخالات سطح المكتب، قواعد udev، ووحدات systemd
 
 ---
 
-## 🔐 التوقيع التشفيري
+## 📱 تغليف إصدار Android
 
-جميع البنى موقّعة تشفيرياً (v0.9.0+):
+### المتطلبات
+- Android SDK / Android Studio
+- Keystore لتوقيع الإصدار (ليس في المستودع؛ راجع SECURITY.md)
 
-- **حزم Linux:** حزم RPM موقّعة بـ GPG (`orbiscreen.asc`)، حزم DEB موقّعة بـ `debsigs`، ويحتوي AppImage على توقيعة مُجزّأة.
-- **Android APK:** موقّع بملف keystore المزوَّد (V2/V3).
-
-للتحقق من حزمة RPM يدوياً:
+### البناء
 ```bash
-sudo rpm --import https://raw.githubusercontent.com/shadow-x78/orbiscreen/main/orbiscreen.asc
-rpm -K orbiscreen_x86_64.rpm
+cd clients/android
+ORBISCREEN_KEYSTORE_PATH=/path/to/keystore.jks \
+ORBISCREEN_STORE_PASSWORD=**** \
+ORBISCREEN_KEY_ALIAS=orbiscreen \
+ORBISCREEN_KEY_PASSWORD=**** \
+./gradlew assembleRelease
+```
+
+### المخرجات
+- `app/build/outputs/apk/release/app-release.apk` (موقّع، V2/V3)
+- إصدار الكود: `117` (0.31.2)، يتم زيادته تلقائياً لكل إصدار
+
+### التحقق
+```bash
+apksigner verify --print-certs app-release.apk
+aapt dump badging app-release.apk | grep version
 ```
 
 ---
 
-## 🚀 مصفوفة إصدارات GitHub Actions
+## 🔏 التوقيع والتوزيع
 
-عند دفع وسم إصدار (مثلاً `git tag v0.25.9 && git push origin v0.25.9`)، يبني سير العمل `.github/workflows/release.yml` تلقائياً جميع حزم الإصدار ويرفقها بصفحة GitHub Releases.
- 
-يُولَّد محتوى `body` للإصدار من كتلة `## [v0.25.9]` في `CHANGELOG.md`.
+### حزم Linux
+- **RPM:** موقّع بـ `rpmsign` باستخدام مفتاح GPG الخاص بالمُحافظ (COPR يتولّى ذلك)
+- **DEB:** موقّع بـ `dpkg-sig` أو `debsign` لرفع PPA
+- **AppImage:** توقيع GPG منفصل (`.sig`) مرفق بـ GitHub Release
+- **أرشيف:** مجموعات SHA256 (`.sha256`) مرفقة بـ GitHub Release
+
+### Android
+- يتم إنشاء keystore للإصدار مرة واحدة، ويُخزّن خارجياً
+- يبني CI باستخدام `ORBISCREEN_KEYSTORE_PATH` + كلمات المرور من GitHub Secrets
+- لا توجد مادة keystore في المستودع
+
+### مجموعات التحقق
+```bash
+# التحقق من الأرشيف
+sha256sum -c orbiscreen-<version>-linux-x86_64.tar.gz.sha256
+
+# التحقق من AppImage
+gpg --verify orbiscreen-x86_64.AppImage.sig orbiscreen-x86_64.AppImage
+```
 
 ---
 
-## 📱 خيارات بناء Android
+## 📄 الرخصة
 
-| نوع البناء | الأمر | ملاحظات |
-|------------|---------|-------|
-| Debug غير موقّع | `./gradlew assembleDebug` | بلا توقيع؛ غير مخصص للتوزيع |
-| Release موقّع | `./gradlew assembleRelease` | يستخدم keystore المزوَّد عبر `ORBISCREEN_KEYSTORE_PATH` عند تكوينه |
-| فحص Lint ثابت | `./gradlew lintDebug` | اشتراك المشروع في `androidx.media3 UnstableApi` |
+Orbiscreen مرخص تحت **GPL-3.0-or-later**.
 
-يبلغ حجم APK الـ Debug حوالي 22 ميغابايت؛ يقلّص R8 حجم APK الـ Release إلى نحو 4 ميغابايت.
+راجع [LICENSE](../LICENSE) للنص الكامل. جميع سكربتات التغليف وملفات spec ترث هذه الرخصة.
 
----
-
-<div align="center">
-
-بُني بواسطة <a href="https://github.com/shadow-x78">shadow-x78</a> ·
-[العودة إلى README](../README_AR.md)
-
-<sub>&copy; 2026 Orbiscreen (shadow-x78)</sub>
-
-</div>
+Copyright (C) 2024-present shadow-x78 and contributors.

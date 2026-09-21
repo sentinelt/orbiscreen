@@ -2,6 +2,12 @@
 
 # Multi-Distro Packaging Guide - Orbiscreen
 
+[![Version](https://img.shields.io/badge/version-0.30.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.8-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.9-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.31.0-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.31.1-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![Version](https://img.shields.io/badge/version-0.31.2-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.92%2B-16a34a?style=flat-square&logo=rust)
@@ -31,6 +37,42 @@
 
 When cutting a release, the version must be updated across all packages:
 
+- `Cargo.toml`: `[workspace.package].version = "0.30.6"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.30.6"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.6"`
+- `PKGBUILD`: `pkgver=0.30.6`
+- `debian/changelog`: new entry for `0.30.6-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.30.6`
+- `Cargo.toml`: `[workspace.package].version = "0.30.7"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.30.7"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.7"`
+- `PKGBUILD`: `pkgver=0.30.7`
+- `debian/changelog`: new entry for `0.30.7-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.30.7`
+- `Cargo.toml`: `[workspace.package].version = "0.30.8"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.30.8"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.8"`
+- `PKGBUILD`: `pkgver=0.30.8`
+- `debian/changelog`: new entry for `0.30.8-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.30.8`
+- `Cargo.toml`: `[workspace.package].version = "0.30.9"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.30.9"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.30.9"`
+- `PKGBUILD`: `pkgver=0.30.9`
+- `debian/changelog`: new entry for `0.30.9-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.30.9`
+- `Cargo.toml`: `[workspace.package].version = "0.31.0"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.31.0"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.31.0"`
+- `PKGBUILD`: `pkgver=0.31.0`
+- `debian/changelog`: new entry for `0.31.0-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.31.0`
+- `Cargo.toml`: `[workspace.package].version = "0.31.1"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.31.1"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.31.1"`
+- `PKGBUILD`: `pkgver=0.31.1`
+- `debian/changelog`: new entry for `0.31.1-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.31.1`
 - `Cargo.toml`: `[workspace.package].version = "0.31.2"`
 - `clients/android/app/build.gradle.kts`: `versionName = "0.31.2"`, `versionCode` incremented
 - `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.31.2"`
@@ -49,6 +91,12 @@ cargo run -p orbiscreen-daemon -- --version
 <a id="packaging-matrix"></a>
 ## 📦 Packaging Matrix
 
+The release matrix is: `0.30.6` (workspace), `versionCode = 111` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.30.7` (workspace), `versionCode = 112` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.30.8` (workspace), `versionCode = 113` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.30.9` (workspace), `versionCode = 114` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.31.0` (workspace), `versionCode = 115` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.31.1` (workspace), `versionCode = 116` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 The release matrix is: `0.31.2` (workspace), `versionCode = 117` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 
 Orbiscreen provides build configurations and package definitions for all major Linux distributions and Android:
@@ -104,101 +152,152 @@ cd clients/android
 ```
 Output APK location: `clients/android/app/build/outputs/apk/release/app-release.apk`
 
-The release APK is signed with the keystore supplied via `ORBISCREEN_KEYSTORE_PATH` (when configured) using V2/V3 schemes. ProGuard rules in `clients/android/app/proguard-rules.pro` keep `androidx.media3`, OkHttp, Compose, and NSD reflective classes.
+The release APK is signed with the keystore provided via `ORBISCREEN_KEYSTORE_PATH` (when configured) using V2/V3 signing schemes. ProGuard rules in `clients/android/app/proguard-rules.pro` preserve reflective `androidx.media3`, OkHttp, Compose, and NSD classes.
 
 ---
 
-## 🏪 Distribution Repositories
+<a id="supported-distros--targets"></a>
+## 🎯 Supported Distros & Targets
 
-### Fedora COPR (automated via Packit)
+| Target | Format | Distributions | Status |
+|--------|--------|---------------|--------|
+| Linux x86_64 | `.deb` | Ubuntu 22.04+, Debian 12+, Mint 21+, Pop!_OS 22.04+ | ✅ Automated |
+| Linux x86_64 | `.rpm` | Fedora 38+, RHEL 9+, Rocky/Alma 9+, openSUSE Tumbleweed/Leap 15.5+ | ✅ Automated |
+| Linux x86_64 | `PKGBUILD` | Arch Linux, Manjaro, EndeavourOS, Garuda | ✅ Automated |
+| Linux x86_64 | `.AppImage` | Any glibc-based distro | ✅ Automated |
+| Linux x86_64 | `.tar.gz` | Any distro (manual install) | ✅ Automated |
+| Android ARM64 | `.apk` | Android 7.0+ (API 24+) | ✅ Automated |
 
-The repo carries `.packit.yaml` and a source-build spec (`data/orbiscreen-copr.spec`, distinct from the local prebuilt-binary `data/orbiscreen.spec`): pull requests build the RPM on stable Fedora as a CI check, and every GitHub release tag publishes it to COPR automatically.
+---
 
-The build runs fully offline inside COPR's mock sandbox: the SRPM carries the crate dependency tree as a vendored `Source1` tarball (`cargo vendor`, ~19 MB compressed), because COPR builders have no network access during `%build` and a plain `cargo build --locked` would fail to fetch from crates.io. To regenerate after a dependency change: extract the release tarball, run `cargo vendor vendor`, pack it with `zstd -19`, and rebuild the SRPM.
+<a id="source-tarballs"></a>
+## 📦 Source Tarballs
 
-One-time maintainer setup:
-1. Sign in at <https://copr.fedorainfracloud.org> with GitHub (creates the account).
-2. Enable Packit at <https://packit.dev> (Sign in with GitHub → approve the `orbiscreen` repository).
-3. Push the next release tag; Packit creates the `shadow-x78/orbiscreen` COPR project on the first build.
+Release source tarballs are generated by the CI pipeline and attached to GitHub Releases:
 
-User install once published:
-```bash
-dnf copr enable shadow-x78/orbiscreen
-dnf install orbiscreen
+```
+orbiscreen-<version>.tar.gz          # Source code only
+orbiscreen-<version>-linux-x86_64.tar.gz  # Pre-built binaries
 ```
 
-### Fedora Native CI & RPM Packaging (GitHub Actions)
+The source tarball contains the complete workspace with all crates and clients. The binary tarball contains stripped release binaries for `orbiscreen` and `orbiscreen-gui` (when available).
 
-A dedicated GitHub Actions workflow (`.github/workflows/fedora.yml`) runs on native Fedora containers (`fedora:latest`, `41`, `40`). It compiles the workspace, executes unit tests against official Fedora dependencies, and packages binary RPMs.
+---
 
-Maintainers can trigger a rebuild anytime directly from the **Actions** tab on GitHub:
-1. Navigate to **Actions** → **Fedora RPM & CI**.
-2. Click **Run workflow**, choose the target branch and Fedora version, and trigger the job.
-3. Download the compiled `.rpm` directly from the workflow's **Artifacts** section.
+## 🏗️ Fedora / RHEL / CentOS (COPR)
 
-
-### Ubuntu / Pop!_OS / Linux Mint (Launchpad PPA)
-
-Official Launchpad PPA:
+### COPR Repository
 ```bash
-sudo add-apt-repository ppa:shadow-x78/ppa -y
-sudo apt update
+sudo dnf copr enable shadow-x78/orbiscreen
+sudo dnf install orbiscreen
+```
+
+### Build from Spec
+```bash
+./scripts/package-rpm.sh
+```
+The generated RPM: `orbiscreen-<version>-1.x86_64.rpm`
+
+### Spec File
+`data/orbiscreen-copr.spec` contains the COPR build definition with:
+- BuildRequires: `cargo`, `rust >= 1.92`, `gstreamer1-devel`, `gstreamer1-plugins-base-devel`, `wayland-devel`, `libdrm-devel`, `kwayland-devel`, `kde-cli-tools`, `libinput-devel`, `libudev-devel`, `systemd-devel`, `openssl-devel`
+- Runtime Requires: `gstreamer1`, `gstreamer1-plugins-base`, `gstreamer1-plugins-good`, `gstreamer1-plugins-bad-free`, `gstreamer1-libav`, `kwayland`, `kwin`, `libinput`, `systemd`, `openssl-libs`, `webkit2gtk4.1` (GUI)
+
+---
+
+## 📦 Debian / Ubuntu / Linux Mint (.deb)
+
+### Build from Source
+```bash
+./scripts/package-deb.sh
+```
+
+### Control File
+`debian/control` defines:
+- Build-Depends: `cargo (>= 1.92)`, `rustc (>= 1.92)`, `libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`, `libwayland-dev`, `libdrm-dev`, `libkf5waylandclient-dev`, `libkf5kdelibs4support-dev`, `libinput-dev`, `libudev-dev`, `libsystemd-dev`, `libssl-dev`, `pkg-config`, `debhelper-compat (= 13)`, `cmake`
+- Depends: `${shlibs:Depends}`, `${misc:Depends}`, `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer1.0-plugins-bad`, `gstreamer1.0-libav`, `libwayland-client0`, `libkf5waylandclient5`, `libinput10`, `libudev1`, `libsystemd0`, `libssl3`, `webkit2gtk-4.1-0` (GUI)
+
+### Installation
+```bash
+sudo dpkg -i orbiscreen_<version>_amd64.deb
+sudo apt-get install -f
 ```
 
 ---
 
-## 🗑️ Uninstalling Packages
+## 🏔️ Arch Linux / Manjaro (PKGBUILD)
 
-Each package manager handles uninstallation cleanly:
+The repository root contains a standalone `PKGBUILD`:
 
-- **Debian / Ubuntu (`.deb`):** `sudo apt-get remove orbiscreen`
-- **Fedora / RHEL (`.rpm`):** `sudo dnf remove orbiscreen`
-- **Arch Linux / Manjaro:** `sudo pacman -R orbiscreen`
-- **Standalone Tarball:** Run `./scripts/uninstall.sh` provided in the source or tarball directory.
-- **Android:** Long-press the app icon → **App info** → **Uninstall**.
+```bash
+makepkg -si
+```
+
+This will:
+1. Download the release source tarball
+2. Verify SHA256 checksums
+3. Build with `cargo build --release --workspace --locked`
+4. Run unit tests
+5. Install binaries, desktop entries, udev rules, and systemd units
 
 ---
 
-## 🔐 Cryptographic Signing
+## 📱 Android Release Packaging
 
-All artifacts are cryptographically signed (v0.9.0+):
+### Prerequisites
+- Android SDK / Android Studio
+- Keystore for release signing (not in repo; see SECURITY.md)
 
-- **Linux packages:** RPM signed with GPG (`orbiscreen.asc`), DEB signed with `debsigs`, AppImage contains a hashed signature.
-- **Android APK:** Signed with the supplied release keystore (V2/V3).
-
-To verify the Linux RPM manually:
+### Build
 ```bash
-sudo rpm --import https://raw.githubusercontent.com/shadow-x78/orbiscreen/main/orbiscreen.asc
-rpm -K orbiscreen_x86_64.rpm
+cd clients/android
+ORBISCREEN_KEYSTORE_PATH=/path/to/keystore.jks \
+ORBISCREEN_STORE_PASSWORD=**** \
+ORBISCREEN_KEY_ALIAS=orbiscreen \
+ORBISCREEN_KEY_PASSWORD=**** \
+./gradlew assembleRelease
+```
+
+### Output
+- `app/build/outputs/apk/release/app-release.apk` (signed, V2/V3)
+- Version code: `117` (0.31.2), auto-incremented per release
+
+### Verification
+```bash
+apksigner verify --print-certs app-release.apk
+aapt dump badging app-release.apk | grep version
 ```
 
 ---
 
-## 🚀 GitHub Actions Release Matrix
+## 🔏 Signing & Distribution
 
-When a version tag is pushed (e.g. `git tag v0.25.9 && git push origin v0.25.9`), the `.github/workflows/release.yml` workflow automatically builds and attaches all release packages to the GitHub Releases page.
- 
-The release `body` is generated from the `## [v0.25.9]` block in `CHANGELOG.md`.
+### Linux Packages
+- **RPM:** Signed with `rpmsign` using maintainer's GPG key (COPR handles this)
+- **DEB:** Signed with `dpkg-sig` or `debsign` for PPA upload
+- **AppImage:** GPG detached signature (`.sig`) attached to GitHub Release
+- **Tarball:** SHA256 sums (`.sha256`) attached to GitHub Release
+
+### Android
+- Release keystore generated once, stored externally
+- CI builds use `ORBISCREEN_KEYSTORE_PATH` + passwords from GitHub Secrets
+- No keystore material in repository
+
+### Checksums
+```bash
+# Verify tarball
+sha256sum -c orbiscreen-<version>-linux-x86_64.tar.gz.sha256
+
+# Verify AppImage
+gpg --verify orbiscreen-x86_64.AppImage.sig orbiscreen-x86_64.AppImage
+```
 
 ---
 
-## 📱 Android Build Options
+## 📄 License
 
-| Build type | Command | Notes |
-|------------|---------|-------|
-| Unsigned debug | `./gradlew assembleDebug` | No signing; not for distribution |
-| Signed release | `./gradlew assembleRelease` | Uses the keystore supplied via `ORBISCREEN_KEYSTORE_PATH` if configured |
-| Static lint | `./gradlew lintDebug` | Project opt-in to `androidx.media3 UnstableApi` |
+Orbiscreen is licensed under **GPL-3.0-or-later**.
 
-The debug APK is ~22 MB; R8 shrinks the release APK to ~4 MB.
+See [LICENSE](../LICENSE) for full text. All packaging scripts and spec files inherit this license.
 
----
-
-<div align="center">
-
-Built by <a href="https://github.com/shadow-x78">shadow-x78</a> ·
-[Back to README](../README.md)
-
-<sub>&copy; 2026 Orbiscreen (shadow-x78)</sub>
-
-</div>
+Copyright (C) 2024-present shadow-x78 and contributors.
