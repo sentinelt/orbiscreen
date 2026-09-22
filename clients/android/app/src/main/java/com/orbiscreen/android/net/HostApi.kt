@@ -274,13 +274,7 @@ class HostApi {
             }
         }
 
-        val candidates = mutableListOf(
-            "127.0.0.1",
-            "100.115.92.2",
-            "100.115.92.1",
-            "192.168.233.1",
-            "192.168.233.2"
-        )
+        val candidates = UsbLoopback.fallbackProbeHosts().toMutableList()
         try {
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
             while (interfaces != null && interfaces.hasMoreElements()) {

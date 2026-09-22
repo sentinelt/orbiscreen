@@ -1,9 +1,9 @@
 // Orbiscreen - lib.rs (GPL-3.0-or-later)
 // https://github.com/shadow-x78/orbiscreen
 
-pub mod adb;
 pub mod annexb;
 pub mod aoa;
+pub mod aoa_video;
 pub mod display;
 pub mod fec;
 pub mod mdns;
@@ -372,15 +372,9 @@ impl Transport {
             let aoa_active = self.aoa_active.clone();
             let aoa_active_for_sup = aoa_active.clone();
             let aoa_shutdown = shutdown_rx.clone();
+            let aoa_displays = displays.clone();
             tokio::spawn(async move {
-                aoa::supervisor(aoa_port, aoa_active_for_sup, aoa_shutdown).await;
-            });
-
-            let adb_port = self.cfg.signaling_port;
-            let adb_udp_port = udp_port;
-            let adb_shutdown = shutdown_rx.clone();
-            tokio::spawn(async move {
-                adb::supervisor(adb_port, adb_udp_port, adb_shutdown).await;
+                aoa::supervisor(aoa_port, aoa_active_for_sup, aoa_shutdown, aoa_displays).await;
             });
 
             let usb_stats = state.stats.clone();
@@ -388,10 +382,10 @@ impl Transport {
             let aoa_active_for_stats = aoa_active.clone();
             Some(tokio::spawn(async move {
                 loop {
-                    let is_aoa = aoa_active_for_stats.load(Ordering::Relaxed) > 0;
+                    let bridges = aoa_active_for_stats.load(Ordering::Relaxed);
                     let names = aoa::get_connected_candidate_names();
-                    let count = if is_aoa { 1 } else { names.len() };
-                    usb_stats.note_usb_state(count, names, is_aoa);
+                    let count = if bridges > 0 { bridges } else { names.len() };
+                    usb_stats.note_usb_state(count, names, bridges > 0);
                     tokio::select! {
                         _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
                         _ = usb_shutdown.changed() => break,

@@ -49,7 +49,7 @@ enum class HandshakeAction { Ack, Control, Ignore }
 
 class UdpPlayer(
     val stats: StreamStats = StreamStats(),
-) {
+) : SurfaceTarget {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _event = MutableStateFlow<StreamEvent>(StreamEvent.Idle)
     val event: StateFlow<StreamEvent> get() = _event
@@ -83,7 +83,7 @@ class UdpPlayer(
     var width: Int = 1920
     var height: Int = 1080
 
-    fun attachSurface(s: Surface) {
+    override fun attachSurface(s: Surface) {
         val same = surface == s && configured && codec != null
         surface = s
         if (same) return
@@ -92,7 +92,7 @@ class UdpPlayer(
         requestIdr()
     }
 
-    fun detachSurface() {
+    override fun detachSurface() {
         surface = null
         releaseCodec()
     }

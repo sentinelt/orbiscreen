@@ -147,6 +147,8 @@ fun StreamScreen(
     }
     val player = viewModel.player.collectAsState().value
     val udp = viewModel.udpPlayer.collectAsState().value
+    val usb = viewModel.usbPlayer.collectAsState().value
+    val surfacePlayer = udp ?: usb
     var showControls by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showExitConfirmDialog by remember { mutableStateOf(false) }
@@ -263,11 +265,12 @@ fun StreamScreen(
         )
 
         val udpLat = udp?.latencyMs?.collectAsState()?.value
-        if ((player != null || udp != null) && state.event !is StreamEvent.Disconnected) {
+        val usbLat = usb?.latencyMs?.collectAsState()?.value
+        if ((player != null || surfacePlayer != null) && state.event !is StreamEvent.Disconnected) {
             val input = remember { viewModel.ensureInput() }
             PlayerSurface(
                 player = player,
-                udp = udp,
+                udp = surfacePlayer,
                 isTouchMode = isTouchMode,
                 streamWidth = state.displayWidth,
                 streamHeight = state.displayHeight,
@@ -305,9 +308,13 @@ fun StreamScreen(
         ) {
             ControlToolbar(
                 hostLabel = if (state.host == "127.0.0.1") "USB · Orbiscreen" else state.host,
-                encoder = if (udp != null) "${state.encoder} · UDP" else state.encoder,
+                encoder = when {
+                    udp != null -> "${state.encoder} · UDP"
+                    usb != null -> "${state.encoder} · USB"
+                    else -> state.encoder
+                },
                 resolution = "${state.displayWidth}×${state.displayHeight}",
-                delayMs = udpLat,
+                delayMs = udpLat ?: usbLat,
                 isTouchMode = isTouchMode,
                 onToggleInputMode = {
                     isTouchMode = !isTouchMode

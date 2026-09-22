@@ -58,6 +58,8 @@ class MainActivity : ComponentActivity() {
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                     if (granted && targetAccessory != null) {
                         UsbAccessoryManager.startAccessory(context, targetAccessory)
+                    } else if (!granted) {
+                        UsbAccessoryManager.onPermissionDenied()
                     }
                 }
             }

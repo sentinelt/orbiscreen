@@ -93,6 +93,8 @@ class StreamViewModel(
     val player = holders.flatMapLatest { it.player }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val udpPlayer = holders.flatMapLatest { it.udpPlayer }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val usbPlayer = holders.flatMapLatest { it.usbPlayer }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val streamStats get() = playerHolder.stats
 
     fun detectNativeDisplay(): Triple<Int, Int, Int> {
@@ -116,6 +118,18 @@ class StreamViewModel(
         return Triple(nativeW, nativeH, refreshRate)
     }
 
+    private suspend fun waitForAoaProxy() {
+        if (!com.orbiscreen.android.net.UsbLoopback.isLoopback(host)) return
+        if (com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive) return
+        com.orbiscreen.android.usb.UsbAccessoryManager.init(context)
+        val deadline = android.os.SystemClock.elapsedRealtime() + 2_000L
+        while (!com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive &&
+            android.os.SystemClock.elapsedRealtime() < deadline
+        ) {
+            delay(50)
+        }
+    }
+
     private suspend fun freshToken(forceRefresh: Boolean = false): String {
         if (isLan) return proxy?.localToken.orEmpty()
         return withContext(Dispatchers.IO) {
@@ -123,8 +137,10 @@ class StreamViewModel(
             if (!forceRefresh && !current.isNullOrBlank()) {
                 return@withContext current
             }
+            val h = transportHost
+            val p = transportPort
             for (attempt in 1..6) {
-                val t = hostApi.token(host, port)
+                val t = hostApi.token(h, p)
                 if (!t.isNullOrBlank()) {
                     sessionToken = t
                     inputDispatcher?.updateToken(t)
@@ -157,7 +173,10 @@ class StreamViewModel(
         viewModelScope.launch {
             while (isActive) {
                 delay(Idr.DEBOUNCE_MS)
-                if (waitingForKeyframe && playerHolder.udpPlayer.value == null) {
+                if (waitingForKeyframe &&
+                    playerHolder.udpPlayer.value == null &&
+                    playerHolder.usbPlayer.value == null
+                ) {
                     requestIdr()
                 }
             }
@@ -300,6 +319,16 @@ class StreamViewModel(
     }
 
     private suspend fun connectStream() {
+            if (!isLan) {
+                waitForAoaProxy()
+                if (com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive) {
+                    val p = com.orbiscreen.android.usb.UsbAccessoryManager.localProxyPort
+                    if (p in 1..65535) {
+                        transportHost = "127.0.0.1"
+                        transportPort = p
+                    }
+                }
+            }
             val info = withContext(Dispatchers.IO) {
                 var t: String? = null
                 var retries = 0
@@ -325,6 +354,12 @@ class StreamViewModel(
             displaySessionId = session?.id
             inputDispatcher?.sessionId = session?.id
             val hostInfo = info.second
+            if (!isLan && session == null) {
+                _state.value = _state.value.copy(
+                    event = StreamEvent.Error(-4, "USB session failed"),
+                )
+                return
+            }
             val (nativeW, nativeH, _) = detectNativeDisplay()
             
             val preset = prefs.resolutionPreset
@@ -382,6 +417,11 @@ class StreamViewModel(
         val udp = playerHolder.udpPlayer.value
         if (udp != null) {
             udp.requestIdr()
+            return
+        }
+        val usb = playerHolder.usbPlayer.value
+        if (usb != null) {
+            usb.requestIdr()
             return
         }
         val now = android.os.SystemClock.elapsedRealtime()
