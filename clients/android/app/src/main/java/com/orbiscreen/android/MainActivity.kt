@@ -143,6 +143,7 @@ private fun App(prefs: PrefsStore) {
     var startupUpdate by remember { mutableStateOf<ReleaseInfo?>(null) }
 
     LaunchedEffect(Unit) {
+        if (BuildConfig.DEBUG) return@LaunchedEffect
         delay(1200)
         val release = try {
             UpdateManager(context).checkForUpdates()

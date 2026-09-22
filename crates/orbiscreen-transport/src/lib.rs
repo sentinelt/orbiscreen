@@ -2058,6 +2058,21 @@ mod tests {
     }
 
     #[test]
+    fn stats_js_unit_tests() {
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let script = manifest.join("../../clients/web/stats.test.js");
+        let Some(output) = run_node(&["--test", script.to_str().expect("utf-8 path")]) else {
+            eprintln!("skipping stats_js_unit_tests: node not installed");
+            return;
+        };
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
     fn stats_track_clients_and_frames() {
         let stats = Arc::new(Stats::default());
         stats.note_frame();
