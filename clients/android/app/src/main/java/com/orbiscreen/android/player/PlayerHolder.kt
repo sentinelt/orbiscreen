@@ -195,6 +195,12 @@ class PlayerHolder(
         val udpPort = session?.udpPort ?: info?.udpPort ?: 0
         val streamW = session?.width ?: info?.width ?: 1920
         val streamH = session?.height ?: info?.height ?: 1080
+        val aoaProxy = com.orbiscreen.android.net.UsbLoopback.isAccessoryProxy(
+            host,
+            port,
+            com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive,
+            com.orbiscreen.android.usb.UsbAccessoryManager.localProxyPort,
+        )
         if (udpPort in 1..65535 && !com.orbiscreen.android.net.UsbLoopback.isLoopback(host)) {
             val udp = UdpPlayer(stats)
             val started = kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -211,7 +217,7 @@ class PlayerHolder(
             }
         }
 
-        if (com.orbiscreen.android.net.UsbLoopback.isLoopback(host)) {
+        if (aoaProxy) {
             if (!com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive) {
                 com.orbiscreen.android.usb.UsbAccessoryManager.init(context)
                 val deadline = android.os.SystemClock.elapsedRealtime() + 1_500L

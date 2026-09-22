@@ -20,6 +20,13 @@ object UsbLoopback {
         if (aoaActive) VideoKind.Aoa else VideoKind.HttpAu
 
     /**
+     * LAN login also terminates on 127.0.0.1 (the pinned TLS proxy). That port
+     * is not the AOA accessory proxy, so it must stay on the network player.
+     */
+    fun isAccessoryProxy(host: String, port: Int, aoaActive: Boolean, aoaPort: Int): Boolean =
+        isLoopback(host) && aoaActive && aoaPort in 1..65535 && port == aoaPort
+
+    /**
      * Hosts to probe when AOA is down (USB tethering / ARC gateways).
      * Loopback is omitted: it is only the AOA proxy.
      */

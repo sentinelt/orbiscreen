@@ -28,6 +28,14 @@ class UsbLoopbackTest {
     }
 
     @Test
+    fun lanPinnedProxyIsNotTheAccessory() {
+        assertFalse(UsbLoopback.isAccessoryProxy("127.0.0.1", 45423, aoaActive = true, aoaPort = 33585))
+        assertTrue(UsbLoopback.isAccessoryProxy("127.0.0.1", 33585, aoaActive = true, aoaPort = 33585))
+        assertFalse(UsbLoopback.isAccessoryProxy("192.168.39.191", 8788, aoaActive = true, aoaPort = 33585))
+        assertFalse(UsbLoopback.isAccessoryProxy("127.0.0.1", 33585, aoaActive = false, aoaPort = 33585))
+    }
+
+    @Test
     fun loopbackNeverUsesMpegTsExoPlayer() {
         assertEquals(UsbLoopback.VideoKind.Aoa, UsbLoopback.videoKind(aoaActive = true))
         assertEquals(UsbLoopback.VideoKind.HttpAu, UsbLoopback.videoKind(aoaActive = false))
