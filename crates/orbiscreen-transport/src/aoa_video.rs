@@ -169,6 +169,19 @@ pub fn clock_offset_ns(host_ns: u64, t0_ns: u64, now_ns: u64) -> i64 {
     host_ns.wrapping_add(rtt / 2).wrapping_sub(now_ns) as i64
 }
 
+/// The USB video task is the session's viewer. Transient send failures and a
+/// closed broadcast must not drop that lease; only leaving the accessory does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoPumpEvent {
+    BridgeStopped,
+    BroadcastClosed,
+    SendFailed,
+}
+
+pub fn video_pump_should_release(event: VideoPumpEvent) -> bool {
+    matches!(event, VideoPumpEvent::BridgeStopped)
+}
+
 pub fn host_now_ns() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -329,6 +342,13 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert_eq!(used, a.len() + b.len());
         assert_eq!(&buf[used..], &b[..4]);
+    }
+
+    #[test]
+    fn video_pump_keeps_viewer_on_transient_failure() {
+        assert!(video_pump_should_release(VideoPumpEvent::BridgeStopped));
+        assert!(!video_pump_should_release(VideoPumpEvent::BroadcastClosed));
+        assert!(!video_pump_should_release(VideoPumpEvent::SendFailed));
     }
 
     #[test]

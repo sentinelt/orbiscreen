@@ -201,17 +201,23 @@ class StreamViewModel(
             }
         }
         viewModelScope.launch {
+            var healthFailures = 0
             while (isActive) {
                 delay(2000)
-                if (_state.value.event is StreamEvent.Playing && transportPort > 0) {
-                    val alive = checkHostAlive(transportHost, transportPort)
-                    if (!alive) {
-                        android.util.Log.w("StreamVM", "host unreachable while playing; triggering disconnect")
-                        playerHolder.release()
-                        _state.value = _state.value.copy(
-                            event = StreamEvent.Disconnected("Host daemon stopped or disconnected")
-                        )
-                    }
+                if (_state.value.event !is StreamEvent.Playing || transportPort <= 0) {
+                    healthFailures = 0
+                    continue
+                }
+                val usbVideoActive = holders.value.usbPlayer.value != null
+                val alive = checkHostAlive(transportHost, transportPort)
+                healthFailures = if (alive) 0 else healthFailures + 1
+                if (HostWatch.shouldDisconnect(usbVideoActive, healthFailures)) {
+                    android.util.Log.w("StreamVM", "host unreachable while playing; triggering disconnect")
+                    healthFailures = 0
+                    playerHolder.release()
+                    _state.value = _state.value.copy(
+                        event = StreamEvent.Disconnected("Host daemon stopped or disconnected")
+                    )
                 }
             }
         }

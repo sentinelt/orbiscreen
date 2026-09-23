@@ -404,6 +404,7 @@ async fn run_native_video(
         fn drop(&mut self) {
             let ctl = self.0.clone();
             let id = self.1.clone();
+            debug!("AOA native video releasing viewer session={id}");
             tokio::spawn(async move { ctl.detach(&id).await });
         }
     }
@@ -427,6 +428,7 @@ async fn run_native_video(
 
     loop {
         if stop.load(Ordering::Relaxed) || !running.load(Ordering::Relaxed) {
+            info!("AOA native video stopping session={sid}");
             break;
         }
         let pkt = tokio::select! {
@@ -441,7 +443,15 @@ async fn run_native_video(
                     request_idr();
                     continue;
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    if aoa_video::video_pump_should_release(aoa_video::VideoPumpEvent::BroadcastClosed)
+                    {
+                        break;
+                    }
+                    warn!("AOA video broadcast closed session={sid}; keeping the viewer lease");
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
             },
         };
         if stop.load(Ordering::Relaxed) || !running.load(Ordering::Relaxed) {
@@ -460,7 +470,13 @@ async fn run_native_video(
         match lane_for(pkt.is_keyframe) {
             Lane::Priority => {
                 if prio_tx.send(packed).is_err() {
-                    break;
+                    if aoa_video::video_pump_should_release(aoa_video::VideoPumpEvent::SendFailed) {
+                        break;
+                    }
+                    warn!(
+                        "AOA video priority queue closed session={sid}; keeping the viewer lease"
+                    );
+                    tokio::time::sleep(Duration::from_millis(20)).await;
                 }
             }
             Lane::Video => {
