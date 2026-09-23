@@ -56,6 +56,7 @@ private val OtherGray = Color(0xFF6C7086)
 @Composable
 fun StatsOverlay(
     stats: StreamStats,
+    transport: String = "",
     modifier: Modifier = Modifier,
 ) {
     var snap by remember { mutableStateOf(stats.snapshot()) }
@@ -75,7 +76,8 @@ fun StatsOverlay(
             .padding(horizontal = StatsLayout.PAD_H_DP.dp, vertical = StatsLayout.PAD_V_DP.dp),
     ) {
         Text(
-            text = stringResource(R.string.stats_title),
+            text = StreamTransport.statsTitle(stringResource(R.string.stats_title), transport),
+            maxLines = 1,
             style = compactText(11.sp, FontWeight.SemiBold),
             color = Color.White,
             letterSpacing = 0.4.sp,

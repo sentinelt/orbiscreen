@@ -332,6 +332,9 @@ html, body {
     letter-spacing: 0.4px;
     color: #ffffff;
     margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .statsRow {

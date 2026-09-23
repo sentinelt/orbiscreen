@@ -148,6 +148,12 @@ fun StreamScreen(
     val player = viewModel.player.collectAsState().value
     val udp = viewModel.udpPlayer.collectAsState().value
     val usb = viewModel.usbPlayer.collectAsState().value
+    val videoTransport = StreamTransport.label(
+        udp = udp != null,
+        usbAoa = usb?.usesAoa == true,
+        usbHttp = usb != null && usb.usesAoa != true,
+        exo = player != null,
+    )
     val surfacePlayer = udp ?: usb
     var showControls by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -319,11 +325,11 @@ fun StreamScreen(
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
             ControlToolbar(
-                hostLabel = if (state.host == "127.0.0.1") "USB · Orbiscreen" else state.host,
-                encoder = when {
-                    udp != null -> "${state.encoder} · UDP"
-                    usb != null -> "${state.encoder} · USB"
-                    else -> state.encoder
+                hostLabel = StreamTransport.hostLabel(videoTransport, state.host),
+                encoder = if (videoTransport.isBlank()) {
+                    state.encoder
+                } else {
+                    "${state.encoder} · $videoTransport"
                 },
                 resolution = "${state.displayWidth}×${state.displayHeight}",
                 delayMs = frameDelayMs,
@@ -418,7 +424,7 @@ fun StreamScreen(
                 .align(Alignment.BottomStart)
                 .padding(start = 16.dp, bottom = 16.dp),
         ) {
-            StatsOverlay(stats = viewModel.streamStats)
+            StatsOverlay(stats = viewModel.streamStats, transport = videoTransport)
         }
 
         AnimatedVisibility(

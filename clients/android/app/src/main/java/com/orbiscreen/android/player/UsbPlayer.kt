@@ -58,6 +58,7 @@ class UsbPlayer(
     private var pumpJob: Job? = null
     private val reader = AoaFrames.VideoReader()
     private var aoaMode = false
+    val usesAoa: Boolean get() = aoaMode
     private var httpCall: okhttp3.Call? = null
 
     override fun attachSurface(s: Surface) {

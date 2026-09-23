@@ -518,6 +518,7 @@ window.addEventListener("pagehide", () => {
 let displayWidth = 1920;
 let displayHeight = 1080;
 let encoderName = "NVENC";
+let videoTransport = "";
 let authToken = "";
 let wtConfig = null;
 let wtTransport = null;
@@ -592,12 +593,17 @@ function updateInfoDisplay() {
         ? OrbiStats.formatToolbarDelay(ageMs)
         : ((ageMs != null && ageMs >= 0) ? `delay ${ageMs}ms` : "delay —");
     const narrow = window.matchMedia("(orientation: portrait), (max-width: 720px)").matches;
+    const encoderLabel = videoTransport ? `${encoderName} · ${videoTransport}` : encoderName;
     const infoStr = narrow
         ? delayText
-        : `${displayWidth}×${displayHeight}  ${encoderName}  ${delayText}`;
+        : `${displayWidth}×${displayHeight}  ${encoderLabel}  ${delayText}`;
     if (hostInfoEl) hostInfoEl.textContent = infoStr;
     if (statRes) statRes.textContent = `${displayWidth} × ${displayHeight}`;
-    if (statEncoder) statEncoder.textContent = encoderName;
+    if (statEncoder) statEncoder.textContent = encoderLabel;
+    const statsTitleEl = document.getElementById("statsTitle");
+    if (statsTitleEl) {
+        statsTitleEl.textContent = videoTransport ? `Statistics · ${videoTransport}` : "Statistics";
+    }
     if (statLatency) {
         statLatency.textContent = (lastDelayMs != null && lastDelayMs >= 0)
             ? `${lastDelayMs} ms`
@@ -1670,7 +1676,13 @@ function feedAccessUnit(msg) {
     }
 }
 
+function setVideoTransport(name) {
+    videoTransport = name || "";
+    updateInfoDisplay();
+}
+
 async function startAuStream() {
+    setVideoTransport("HTTPS /au");
     const params = new URLSearchParams();
     if (displaySessionId) params.set("session", displaySessionId);
     const qs = params.toString();
@@ -1806,6 +1818,7 @@ async function startStream(opts = {}) {
             return;
         }
         wtTransport = transport;
+        setVideoTransport("WebTransport");
         const bidi = await transport.createBidirectionalStream();
         const writer = bidi.writable.getWriter();
         wtWriter = writer;
