@@ -409,11 +409,33 @@ class StreamViewModel(
                 _state.value.displayHeight,
             )
             playerHolder.refreshSession = { reopenDisplaySession() }
+            val udpTarget = if (isLan && session != null && token.isNotBlank()) {
+                val issued = withContext(Dispatchers.IO) {
+                    hostApi.issueUdpKey(transportHost, transportPort, token, session.id)
+                }
+                if (issued == null) {
+                    android.util.Log.w("StreamVM", "UDP key was not issued; using MPEG-TS")
+                    null
+                } else {
+                    com.orbiscreen.android.player.UdpVideoTarget(
+                        host = host,
+                        port = issued.udpPort,
+                        keyId = issued.keyId,
+                        secret = issued.secret,
+                        sessionId = session.id,
+                        httpHost = transportHost,
+                        httpPort = transportPort,
+                    )
+                }
+            } else {
+                null
+            }
             playerHolder.build(
                 transportHost,
                 transportPort,
                 session,
                 tokenProvider = { freshToken() },
+                udp = udpTarget,
             )
     }
 

@@ -64,6 +64,7 @@ private data class StreamTarget(
     val port: Int,
     val tokenProvider: suspend () -> String,
     val session: com.orbiscreen.android.net.HostApi.SessionInfo? = null,
+    val udp: UdpVideoTarget? = null,
 )
 
 @OptIn(UnstableApi::class)
@@ -140,12 +141,14 @@ class PlayerHolder(
         port: Int,
         session: com.orbiscreen.android.net.HostApi.SessionInfo? = null,
         tokenProvider: suspend () -> String = { "" },
+        udp: UdpVideoTarget? = null,
     ): ExoPlayer? = buildInternal(
         host,
         port,
         tokenProvider,
         fromReconnect = false,
         session = session,
+        udp = udp,
     )
 
     private suspend fun buildInternal(
@@ -154,6 +157,7 @@ class PlayerHolder(
         tokenProvider: suspend () -> String,
         fromReconnect: Boolean,
         session: com.orbiscreen.android.net.HostApi.SessionInfo? = null,
+        udp: UdpVideoTarget? = null,
     ): ExoPlayer? {
         releaseInternal()
         if (!fromReconnect) {
@@ -162,7 +166,7 @@ class PlayerHolder(
             reconnectDelayMs = 1_000L
             retryCount = 0
         }
-        lastTarget = StreamTarget(host, port, tokenProvider, session)
+        lastTarget = StreamTarget(host, port, tokenProvider, session, udp)
         stats.reset()
 
         val token = try {
@@ -192,7 +196,6 @@ class PlayerHolder(
         } catch (_: Exception) {
             null
         }
-        val udpPort = session?.udpPort ?: info?.udpPort ?: 0
         val streamW = session?.width ?: info?.width ?: 1920
         val streamH = session?.height ?: info?.height ?: 1080
         val aoaProxy = com.orbiscreen.android.net.UsbLoopback.isAccessoryProxy(
@@ -201,17 +204,18 @@ class PlayerHolder(
             com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive,
             com.orbiscreen.android.usb.UsbAccessoryManager.localProxyPort,
         )
-        if (udpPort in 1..65535 && !com.orbiscreen.android.net.UsbLoopback.isLoopback(host)) {
-            val udp = UdpPlayer(stats)
+        val video = udp?.takeIf { it.usable() }
+        if (video != null) {
+            val udpPlayer = UdpPlayer(stats)
             val started = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                udp.start(host, udpPort, token, streamW, streamH, session?.id, port)
+                udpPlayer.start(video, token, streamW, streamH)
             }
             if (started) {
-                _udp.value = udp
+                _udp.value = udpPlayer
                 _usb.value = null
                 _player.value = null
                 scope.launch {
-                    udp.event.collect { ev -> _event.value = ev }
+                    udpPlayer.event.collect { ev -> _event.value = ev }
                 }
                 return null
             }
@@ -527,6 +531,7 @@ class PlayerHolder(
                 target.tokenProvider,
                 fromReconnect = true,
                 session = session,
+                udp = target.udp?.takeIf { it.sessionId == session?.id },
             )
         }
     }
@@ -576,7 +581,8 @@ class PlayerHolder(
     fun retry(host: String, port: Int, tokenProvider: suspend () -> String = { "" }) {
         scope.launch {
             val session = lastTarget?.session ?: refreshedSession()
-            build(host, port, session, tokenProvider)
+            val udp = lastTarget?.udp?.takeIf { it.sessionId == session?.id }
+            build(host, port, session, tokenProvider, udp)
         }
     }
 
