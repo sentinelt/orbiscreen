@@ -8,6 +8,7 @@ import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,7 +39,11 @@ object UsbAccessoryManager {
     private const val MAX_PAYLOAD_LEN = 16384
     private const val VIDEO_STREAM_ID: Short = 0
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+            Log.w(TAG, "USB coroutine ended: ${error.message}")
+        },
+    )
     private val _isAoaActive = MutableStateFlow(false)
     val isAoaActiveFlow: StateFlow<Boolean> = _isAoaActive.asStateFlow()
     val isAoaActive: Boolean get() = _isAoaActive.value
@@ -254,21 +259,17 @@ object UsbAccessoryManager {
             activeStreams[streamId] = clientSocket
 
             scope.launch {
-                sendDataFrame(outStream, streamId, FRAME_FLAG_OPEN, null, 0, 0)
-
-                val inSock = clientSocket.getInputStream()
-                val buf = ByteArray(MAX_PAYLOAD_LEN)
                 try {
-                    while (isRunning.get() && !clientSocket.isClosed) {
-                        val n = inSock.read(buf)
-                        if (n <= 0) break
+                    sendDataFrame(outStream, streamId, FRAME_FLAG_OPEN, null, 0, 0)
+                    AoaAcceptedSocket.readLoop(clientSocket, { isRunning.get() }) { buf, n ->
                         sendDataFrame(outStream, streamId, FRAME_FLAG_DATA, buf, 0, n)
                     }
-                } catch (_: Exception) {}
-
-                sendDataFrame(outStream, streamId, FRAME_FLAG_CLOSE, null, 0, 0)
-                activeStreams.remove(streamId)
-                try { clientSocket.close() } catch (_: Exception) {}
+                    sendDataFrame(outStream, streamId, FRAME_FLAG_CLOSE, null, 0, 0)
+                } catch (_: Exception) {
+                } finally {
+                    activeStreams.remove(streamId)
+                    try { clientSocket.close() } catch (_: Exception) {}
+                }
             }
         }
     }
