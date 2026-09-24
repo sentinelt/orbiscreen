@@ -260,6 +260,7 @@ fn shift_bits(bits: &mut [u64; 4], shift: u64) {
 struct IssuedKey {
     secret: [u8; 32],
     session: Option<String>,
+    ttl: Duration,
     expires: Instant,
     replay: ReplayWindow,
     host_counter: u64,
@@ -298,16 +299,22 @@ impl UdpKeyRing {
     }
 
     pub fn insert(&self, key: UdpSealKey, session: Option<String>, expires: Instant) {
+        let ttl = expires.saturating_duration_since(Instant::now());
         self.lock().insert(
             key.id,
             IssuedKey {
                 secret: key.secret,
                 session,
+                ttl,
                 expires,
                 replay: ReplayWindow::new(),
                 host_counter: 0,
             },
         );
+    }
+
+    fn touch(issued: &mut IssuedKey) {
+        issued.expires = Instant::now() + issued.ttl;
     }
 
     fn live<'a>(
@@ -348,7 +355,11 @@ impl UdpKeyRing {
         let Some(issued) = Self::live(&mut map, id) else {
             return false;
         };
-        issued.replay.accept(counter)
+        if !issued.replay.accept(counter) {
+            return false;
+        }
+        Self::touch(issued);
+        true
     }
 
     pub fn seal_host(&self, id: &[u8; 16], plaintext: &[u8]) -> Option<Vec<u8>> {
@@ -369,6 +380,7 @@ impl UdpKeyRing {
     fn next_host(&self, id: &[u8; 16]) -> Option<(UdpSealKey, [u8; NONCE_LEN])> {
         let mut map = self.lock();
         let issued = Self::live(&mut map, id)?;
+        Self::touch(issued);
         issued.host_counter = issued.host_counter.saturating_add(1);
         if issued.host_counter == 0 {
             return None;
@@ -525,5 +537,29 @@ mod tests {
             Instant::now() - Duration::from_secs(1),
         );
         assert!(ring.lookup(&expired.id).is_none());
+        assert!(!ring.accept_client_nonce(&expired.id, &nonce(DIR_CLIENT, 1)));
+        assert!(ring.lookup(&expired.id).is_none());
+    }
+
+    #[test]
+    fn traffic_extends_a_live_key_past_its_original_deadline() {
+        let ttl = Duration::from_millis(80);
+        let ring = UdpKeyRing::new();
+        let key = ring.issue(Some("sess".into()), ttl);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(ring.seal_host(&key.id, b"ping").is_some());
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(ring.lookup(&key.id).is_some());
+        assert!(ring.seal_host(&key.id, b"still").is_some());
+        assert!(ring.accept_client_nonce(&key.id, &nonce(DIR_CLIENT, 1)));
+    }
+
+    #[test]
+    fn an_unused_key_expires_at_its_idle_deadline() {
+        let ring = UdpKeyRing::new();
+        let key = ring.issue(Some("sess".into()), Duration::from_millis(40));
+        std::thread::sleep(Duration::from_millis(70));
+        assert!(ring.lookup(&key.id).is_none());
+        assert!(ring.seal_host(&key.id, b"late").is_none());
     }
 }
