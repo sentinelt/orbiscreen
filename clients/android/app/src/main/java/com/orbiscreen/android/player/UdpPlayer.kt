@@ -297,14 +297,17 @@ class UdpPlayer(
 
     private fun handleVideo(data: ByteArray) {
         if (data.size < 28) return
-        val key = data[5].toInt() != 0
+        val flags = data[5].toInt() and 0xff
+        val key = flags and 1 != 0
         val seq = le16(data, 6)
         val frag = le16(data, 8)
         val frags = le16(data, 10)
         val sentNs = le64(data, 20)
-        val payload = data.copyOfRange(28, data.size)
+        val block = Fec.viewBlock(flags, data.copyOfRange(28, data.size)) ?: return
         dropStale(seq)
-        val done = pending.offer(seq, frag, frags, key, sentNs, payload) ?: return
+        val done = pending.offer(
+            seq, frag, frags, key, sentNs, block.body, block.index, block.count,
+        ) ?: return
         val nowMs = System.currentTimeMillis()
         applyReorder(
             reorder.expire(nowMs) +

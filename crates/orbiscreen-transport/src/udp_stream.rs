@@ -357,7 +357,7 @@ pub fn parse_packet(buf: &[u8]) -> Option<Packet> {
                 return None;
             }
             Some(Packet::Video(VideoFragment {
-                is_keyframe: buf[5] != 0,
+                is_keyframe: buf[5] & 1 != 0,
                 seq: u16::from_le_bytes([buf[6], buf[7]]),
                 frag: u16::from_le_bytes([buf[8], buf[9]]),
                 frags: u16::from_le_bytes([buf[10], buf[11]]),
@@ -443,36 +443,42 @@ pub fn fragment_video(
     if pkt.bytes.is_empty() {
         return Vec::new();
     }
-    let shards = super::fec::shard_au(&pkt.bytes, max_payload.max(1));
-    let frags = shards.data.len() as u16;
-    let mut out: Vec<Vec<u8>> = shards
-        .data
-        .iter()
-        .enumerate()
-        .map(|(i, part)| {
-            encode_video(
-                seq,
-                i as u16,
-                frags,
-                pkt.is_keyframe,
-                pkt.pts_ns,
-                sent_ns,
-                part,
-            )
+    encode_block_packets(pkt, max_payload, 5, |frag, frags, key, payload| {
+        encode_video(seq, frag, frags, key, pkt.pts_ns, sent_ns, payload)
+    })
+}
+
+pub(crate) fn encode_block_packets(
+    pkt: &H264Packet,
+    max_payload: usize,
+    flag_index: usize,
+    mut encode: impl FnMut(u16, u16, bool, &[u8]) -> Vec<u8>,
+) -> Vec<Vec<u8>> {
+    super::fec::shard_au_blocks(&pkt.bytes, max_payload.max(1))
+        .into_iter()
+        .flat_map(|block| {
+            let frags = block.shards.data.len() as u16;
+            let mut packets =
+                Vec::with_capacity(block.shards.data.len() + block.shards.parity.len());
+            for (i, part) in block.shards.data.iter().enumerate() {
+                let payload = super::fec::block_payload(block.index, block.count, part);
+                let mut packet = encode(i as u16, frags, pkt.is_keyframe, &payload);
+                if block.count > 1 && packet.len() > flag_index {
+                    packet[flag_index] |= super::fec::FEC_BLOCK_FLAG;
+                }
+                packets.push(packet);
+            }
+            for (i, par) in block.shards.parity.iter().enumerate() {
+                let payload = super::fec::block_payload(block.index, block.count, par);
+                let mut packet = encode(frags + i as u16, frags, pkt.is_keyframe, &payload);
+                if block.count > 1 && packet.len() > flag_index {
+                    packet[flag_index] |= super::fec::FEC_BLOCK_FLAG;
+                }
+                packets.push(packet);
+            }
+            packets
         })
-        .collect();
-    for (i, par) in shards.parity.iter().enumerate() {
-        out.push(encode_video(
-            seq,
-            frags + i as u16,
-            frags,
-            pkt.is_keyframe,
-            pkt.pts_ns,
-            sent_ns,
-            par,
-        ));
-    }
-    out
+        .collect()
 }
 
 struct UdpClient {
@@ -1405,13 +1411,11 @@ mod tests {
         handle_incoming(&hello, addr, &ctx).await;
         assert_eq!(clients.lock().await.len(), 1);
         let mut buf = vec![0u8; 256];
-        let (n, _) = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            peer.recv_from(&mut buf),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let (n, _) =
+            tokio::time::timeout(std::time::Duration::from_secs(1), peer.recv_from(&mut buf))
+                .await
+                .unwrap()
+                .unwrap();
         let opened = crate::udp_crypto::open(&key.secret, &buf[..n]).expect("sealed ack");
         assert_eq!(parse_packet(&opened), Some(Packet::HelloAck));
         assert!(buf[..n].starts_with(crate::udp_crypto::SEAL_MAGIC));
